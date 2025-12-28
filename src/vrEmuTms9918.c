@@ -1019,8 +1019,8 @@ static void renderText80Layer(
     uint32_t pattByte = patternTable[pattId * PATTERN_BYTES];
 
     const uint32_t colorByte = colorTable[tileX];
-    uint8_t fgColor = colorByte >> 4;
-    uint8_t bgColor = colorByte & 0xf;
+    uint8_t fgColor = tmsFgColor(tms9918, colorByte);
+    uint8_t bgColor = tmsBgColor(tms9918, colorByte);
 
     if (pattByte == 0 && !opaq && bgColor == 0)
     {
