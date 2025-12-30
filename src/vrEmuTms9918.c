@@ -1016,6 +1016,41 @@ static void __time_critical_func(vrEmuTms9918TextScanLine)(VR_EMU_INST_ARG uint1
 static const uint8_t __aligned(4) maskText80Fg[] = { 0x00, 0x0f, 0xf0, 0xff };
 static const uint8_t __aligned(4) maskText80Dual[] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
 
+#define TEXT80_COLOR_WORD(n) ((uint32_t)(((n) | ((n) << 4)) * 0x010101u))
+#define TEXT80_MASK_WORD(bits) ( \
+  ((uint32_t)((bits) & 0x20 ? 0x000000F0u : 0x0)) | \
+  ((uint32_t)((bits) & 0x10 ? 0x0000000Fu : 0x0)) | \
+  ((uint32_t)((bits) & 0x08 ? 0x0000F000u : 0x0)) | \
+  ((uint32_t)((bits) & 0x04 ? 0x00000F00u : 0x0)) | \
+  ((uint32_t)((bits) & 0x02 ? 0x00F00000u : 0x0)) | \
+  ((uint32_t)((bits) & 0x01 ? 0x000F0000u : 0x0)))
+
+static const uint32_t text80ColorWord[16] = {
+  TEXT80_COLOR_WORD(0x0), TEXT80_COLOR_WORD(0x1), TEXT80_COLOR_WORD(0x2), TEXT80_COLOR_WORD(0x3),
+  TEXT80_COLOR_WORD(0x4), TEXT80_COLOR_WORD(0x5), TEXT80_COLOR_WORD(0x6), TEXT80_COLOR_WORD(0x7),
+  TEXT80_COLOR_WORD(0x8), TEXT80_COLOR_WORD(0x9), TEXT80_COLOR_WORD(0xa), TEXT80_COLOR_WORD(0xb),
+  TEXT80_COLOR_WORD(0xc), TEXT80_COLOR_WORD(0xd), TEXT80_COLOR_WORD(0xe), TEXT80_COLOR_WORD(0xf)
+};
+
+static const uint32_t text80MaskWord[64] = {
+  TEXT80_MASK_WORD(0x00), TEXT80_MASK_WORD(0x01), TEXT80_MASK_WORD(0x02), TEXT80_MASK_WORD(0x03),
+  TEXT80_MASK_WORD(0x04), TEXT80_MASK_WORD(0x05), TEXT80_MASK_WORD(0x06), TEXT80_MASK_WORD(0x07),
+  TEXT80_MASK_WORD(0x08), TEXT80_MASK_WORD(0x09), TEXT80_MASK_WORD(0x0a), TEXT80_MASK_WORD(0x0b),
+  TEXT80_MASK_WORD(0x0c), TEXT80_MASK_WORD(0x0d), TEXT80_MASK_WORD(0x0e), TEXT80_MASK_WORD(0x0f),
+  TEXT80_MASK_WORD(0x10), TEXT80_MASK_WORD(0x11), TEXT80_MASK_WORD(0x12), TEXT80_MASK_WORD(0x13),
+  TEXT80_MASK_WORD(0x14), TEXT80_MASK_WORD(0x15), TEXT80_MASK_WORD(0x16), TEXT80_MASK_WORD(0x17),
+  TEXT80_MASK_WORD(0x18), TEXT80_MASK_WORD(0x19), TEXT80_MASK_WORD(0x1a), TEXT80_MASK_WORD(0x1b),
+  TEXT80_MASK_WORD(0x1c), TEXT80_MASK_WORD(0x1d), TEXT80_MASK_WORD(0x1e), TEXT80_MASK_WORD(0x1f),
+  TEXT80_MASK_WORD(0x20), TEXT80_MASK_WORD(0x21), TEXT80_MASK_WORD(0x22), TEXT80_MASK_WORD(0x23),
+  TEXT80_MASK_WORD(0x24), TEXT80_MASK_WORD(0x25), TEXT80_MASK_WORD(0x26), TEXT80_MASK_WORD(0x27),
+  TEXT80_MASK_WORD(0x28), TEXT80_MASK_WORD(0x29), TEXT80_MASK_WORD(0x2a), TEXT80_MASK_WORD(0x2b),
+  TEXT80_MASK_WORD(0x2c), TEXT80_MASK_WORD(0x2d), TEXT80_MASK_WORD(0x2e), TEXT80_MASK_WORD(0x2f),
+  TEXT80_MASK_WORD(0x30), TEXT80_MASK_WORD(0x31), TEXT80_MASK_WORD(0x32), TEXT80_MASK_WORD(0x33),
+  TEXT80_MASK_WORD(0x34), TEXT80_MASK_WORD(0x35), TEXT80_MASK_WORD(0x36), TEXT80_MASK_WORD(0x37),
+  TEXT80_MASK_WORD(0x38), TEXT80_MASK_WORD(0x39), TEXT80_MASK_WORD(0x3a), TEXT80_MASK_WORD(0x3b),
+  TEXT80_MASK_WORD(0x3c), TEXT80_MASK_WORD(0x3d), TEXT80_MASK_WORD(0x3e), TEXT80_MASK_WORD(0x3f)
+};
+
 
 static void renderText80Layer(
   uint8_t y, const uint8_t tileY,
@@ -1025,45 +1060,93 @@ static void renderText80Layer(
   const bool opaq,
   uint8_t *__restrict pixels)
 {
-  uint8_t lastColorByte = 0;
-  uint8_t fgColor = 0;
-  uint8_t bgColor = 0;
   const uint8_t bgc = tmsMainBgColor(tms9918);
-  uint8_t bgFgColor[4] = {bgc, bgc, bgc, bgc};
 
-  for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; ++tileX)
+  if (opaq)
   {
-    const uint8_t pattId = *rowNamesTable++;
-    const uint8_t pattByte = patternTable[pattId * PATTERN_BYTES];
-    const uint8_t colorByte = *colorTable++;
+    uint32_t* pix32 = (uint32_t*)__builtin_assume_aligned(pixels, 4);
 
-    if (opaq)
+    for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; tileX += 4)
     {
-      if (colorByte != lastColorByte)
+      const uint8_t pattId0 = *rowNamesTable++;
+      const uint8_t pattId1 = *rowNamesTable++;
+      const uint8_t pattId2 = *rowNamesTable++;
+      const uint8_t pattId3 = *rowNamesTable++;
+
+      const uint8_t patt0 = patternTable[pattId0 * PATTERN_BYTES] >> 2;
+      const uint8_t patt1 = patternTable[pattId1 * PATTERN_BYTES] >> 2;
+      const uint8_t patt2 = patternTable[pattId2 * PATTERN_BYTES] >> 2;
+      const uint8_t patt3 = patternTable[pattId3 * PATTERN_BYTES] >> 2;
+
+      const uint8_t color0 = *colorTable++;
+      const uint8_t color1 = *colorTable++;
+      const uint8_t color2 = *colorTable++;
+      const uint8_t color3 = *colorTable++;
+
+      /* build packed 12-byte output as three 32-bit stores */
+      uint8_t bgColor = color0 & 0xf;
+      if (!bgColor) bgColor = bgc;
+      uint8_t fgColor = color0 >> 4;
+      if (!fgColor) fgColor = bgc;
+      const uint32_t mask0 = text80MaskWord[patt0];
+      uint32_t word0 = (text80ColorWord[fgColor] & mask0) | (text80ColorWord[bgColor] & ~mask0);
+
+      if (color1 != color0)
       {
-        bgColor = colorByte & 0xf;
+        bgColor = color1 & 0xf;
         if (!bgColor) bgColor = bgc;
-
-        fgColor = colorByte >> 4;
+        fgColor = color1 >> 4;
         if (!fgColor) fgColor = bgc;
-
-        bgFgColor[0] = (bgColor << 4) | bgColor;
-        bgFgColor[1] = (bgColor << 4) | fgColor;
-        bgFgColor[2] = (fgColor << 4) | bgColor;
-        bgFgColor[3] = (fgColor << 4) | fgColor;
-        lastColorByte = colorByte;
       }
+      const uint32_t mask1 = text80MaskWord[patt1];
+      uint32_t word1 = (text80ColorWord[fgColor] & mask1) | (text80ColorWord[bgColor] & ~mask1);
 
-      if (pattByte == 0 && bgColor == bgc) {pixels += 3; continue;}
+      if (color2 != color1)
+      {
+        bgColor = color2 & 0xf;
+        if (!bgColor) bgColor = bgc;
+        fgColor = color2 >> 4;
+        if (!fgColor) fgColor = bgc;
+      }
+      const uint32_t mask2 = text80MaskWord[patt2];
+      uint32_t word2 = (text80ColorWord[fgColor] & mask2) | (text80ColorWord[bgColor] & ~mask2);
 
-      *pixels++ = bgFgColor[pattByte >> 6];
-      *pixels++ = bgFgColor[(pattByte >> 4) & 0x03];
-      *pixels++ = bgFgColor[(pattByte >> 2) & 0x03];
+      if (color3 != color2)
+      {
+        bgColor = color2 & 0xf;
+        if (!bgColor) bgColor = bgc;
+        fgColor = color2 >> 4;
+        if (!fgColor) fgColor = bgc;
+      }
+      bgColor = color3 & 0xf;
+      if (!bgColor) bgColor = bgc;
+      fgColor = color3 >> 4;
+      if (!fgColor) fgColor = bgc;
+      const uint32_t mask3 = text80MaskWord[patt3];
+      uint32_t word3 = (text80ColorWord[fgColor] & mask3) | (text80ColorWord[bgColor] & ~mask3);
+
+      /* bytes: w0hi,w0mid,w0lo,w1hi | w1mid,w1lo,w2hi,w2mid | w2lo,w3hi,w3mid,w3lo */
+      const uint32_t out0 = word0 | (word1 << 24);
+      const uint32_t out1 = (word1 >> 8) | (word2 << 16);
+      const uint32_t out2 = (word2 >> 16) | (word3 << 8);
+
+      pix32[0] = out0;
+      pix32[1] = out1;
+      pix32[2] = out2;
+
+      pix32 += 3;
     }
-    else
+  }
+  else
+  {
+    for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; ++tileX)
     {
-      bgColor = colorByte & 0xf;
-      fgColor = colorByte >> 4;
+      const uint8_t pattId = *rowNamesTable++;
+      const uint8_t pattByte = patternTable[pattId * PATTERN_BYTES];
+      const uint8_t colorByte = *colorTable++;
+
+      uint8_t bgColor = colorByte & 0xf;
+      uint8_t fgColor = colorByte >> 4;
 
       if (pattByte == 0 && bgColor == 0)
       {
