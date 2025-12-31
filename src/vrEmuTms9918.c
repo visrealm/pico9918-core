@@ -610,7 +610,6 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
   const uint16_t spritePatternAddr = tmsSpritePatternTableAddr(tms9918);
   const bool row30Mode = tms9918->isUnlocked && (TMS_REGISTER(tms9918, 0x31) & 0x40);
   const uint32_t maxY = row30Mode ? 0xf0 : 0xe0;
-
   uint32_t spritesShown = 0;
   uint8_t tempStatus = 0x1f;
   uint32_t transparentCount = 0;
@@ -1065,76 +1064,37 @@ static void renderText80Layer(
   if (opaq)
   {
     uint32_t* pix32 = (uint32_t*)__builtin_assume_aligned(pixels, 4);
+    const uint32_t* colorTable32 = (const uint32_t*)__builtin_assume_aligned(colorTable, 4);
+    uint8_t lastColor = 0;
+    uint32_t bgColorMask = text80ColorWord[bgc];
+    uint32_t fgColorMask = text80ColorWord[bgc];
 
     for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; tileX += 4)
     {
-      const uint8_t pattId0 = *rowNamesTable++;
-      const uint8_t pattId1 = *rowNamesTable++;
-      const uint8_t pattId2 = *rowNamesTable++;
-      const uint8_t pattId3 = *rowNamesTable++;
+      uint32_t colorWord = *colorTable32++;
 
-      const uint8_t patt0 = patternTable[pattId0 * PATTERN_BYTES] >> 2;
-      const uint8_t patt1 = patternTable[pattId1 * PATTERN_BYTES] >> 2;
-      const uint8_t patt2 = patternTable[pattId2 * PATTERN_BYTES] >> 2;
-      const uint8_t patt3 = patternTable[pattId3 * PATTERN_BYTES] >> 2;
-
-      const uint8_t color0 = *colorTable++;
-      const uint8_t color1 = *colorTable++;
-      const uint8_t color2 = *colorTable++;
-      const uint8_t color3 = *colorTable++;
-
-      /* build packed 12-byte output as three 32-bit stores */
-      uint8_t bgColor = color0 & 0xf;
-      if (!bgColor) bgColor = bgc;
-      uint8_t fgColor = color0 >> 4;
-      if (!fgColor) fgColor = bgc;
-      const uint32_t mask0 = text80MaskWord[patt0];
-      uint32_t word0 = (text80ColorWord[fgColor] & mask0) | (text80ColorWord[bgColor] & ~mask0);
-
-      if (color1 != color0)
+      uint32_t words[4];
+      for (int i = 0; i < 4; ++i)
       {
-        bgColor = color1 & 0xf;
-        if (!bgColor) bgColor = bgc;
-        fgColor = color1 >> 4;
-        if (!fgColor) fgColor = bgc;
+        const uint8_t color = (uint8_t)colorWord;
+        colorWord >>= 8;
+
+        if (color != lastColor)
+        {
+          uint8_t bgColor = color & 0xf;
+          bgColorMask = text80ColorWord[bgColor ? bgColor : bgc];
+          uint8_t fgColor = color >> 4;
+          fgColorMask = text80ColorWord[fgColor ? fgColor : bgc];
+          lastColor = color;
+        }
+
+        const uint32_t mask = text80MaskWord[patternTable[*rowNamesTable++ * PATTERN_BYTES] >> 2];
+        words[i] = (fgColorMask & mask) | (bgColorMask & ~mask);
       }
-      const uint32_t mask1 = text80MaskWord[patt1];
-      uint32_t word1 = (text80ColorWord[fgColor] & mask1) | (text80ColorWord[bgColor] & ~mask1);
 
-      if (color2 != color1)
-      {
-        bgColor = color2 & 0xf;
-        if (!bgColor) bgColor = bgc;
-        fgColor = color2 >> 4;
-        if (!fgColor) fgColor = bgc;
-      }
-      const uint32_t mask2 = text80MaskWord[patt2];
-      uint32_t word2 = (text80ColorWord[fgColor] & mask2) | (text80ColorWord[bgColor] & ~mask2);
-
-      if (color3 != color2)
-      {
-        bgColor = color2 & 0xf;
-        if (!bgColor) bgColor = bgc;
-        fgColor = color2 >> 4;
-        if (!fgColor) fgColor = bgc;
-      }
-      bgColor = color3 & 0xf;
-      if (!bgColor) bgColor = bgc;
-      fgColor = color3 >> 4;
-      if (!fgColor) fgColor = bgc;
-      const uint32_t mask3 = text80MaskWord[patt3];
-      uint32_t word3 = (text80ColorWord[fgColor] & mask3) | (text80ColorWord[bgColor] & ~mask3);
-
-      /* bytes: w0hi,w0mid,w0lo,w1hi | w1mid,w1lo,w2hi,w2mid | w2lo,w3hi,w3mid,w3lo */
-      const uint32_t out0 = word0 | (word1 << 24);
-      const uint32_t out1 = (word1 >> 8) | (word2 << 16);
-      const uint32_t out2 = (word2 >> 16) | (word3 << 8);
-
-      pix32[0] = out0;
-      pix32[1] = out1;
-      pix32[2] = out2;
-
-      pix32 += 3;
+      *pix32++ = words[0] | (words[1] << 24);
+      *pix32++ = (words[1] >> 8) | (words[2] << 16);
+      *pix32++ = (words[2] >> 16) | (words[3] << 8);
     }
   }
   else
