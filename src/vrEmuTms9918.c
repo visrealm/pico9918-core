@@ -1099,56 +1099,55 @@ static void renderText80Layer(
   }
   else
   {
-    for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; ++tileX)
+    const uint32_t* colorTable32 = (const uint32_t*)__builtin_assume_aligned(colorTable, 4);
+    uint32_t* pix32 = (uint32_t*)__builtin_assume_aligned(pixels, 4);
+    uint8_t lastColor = 0xff;
+    uint32_t fgWord = 0;
+    uint32_t bgWord = 0;
+    int fgBgTransp = 0;
+
+    for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; tileX += 4)
     {
-      const uint8_t pattId = *rowNamesTable++;
-      const uint8_t pattByte = patternTable[pattId * PATTERN_BYTES];
-      const uint8_t colorByte = *colorTable++;
+      uint32_t colorWord = *colorTable32++;
+      uint32_t masks[4];
+      uint32_t vals[4];
 
-      uint8_t bgColor = colorByte & 0xf;
-      uint8_t fgColor = colorByte >> 4;
-
-      if (pattByte == 0 && bgColor == 0)
+      for (int i = 0; i < 4; ++i)
       {
-        pixels += TEXT_CHAR_WIDTH / 2;
-        continue;
+        const uint8_t pattId = *rowNamesTable++;
+        const uint8_t pattIdx = patternTable[pattId * PATTERN_BYTES] >> 2;
+
+        const uint8_t colorByte = (uint8_t)colorWord;
+        colorWord >>= 8;
+
+        const uint8_t bgNib = colorByte & 0xf;
+        const uint8_t fgNib = colorByte >> 4;
+
+        if (colorByte != lastColor)
+        {
+          fgWord = text80ColorWord[fgNib];
+          bgWord = text80ColorWord[bgNib];
+          lastColor = colorByte;
+        }
+
+        const uint32_t mask = text80MaskWord[pattIdx];
+        const uint32_t fgMask = fgNib ? mask : 0;
+        const uint32_t bgMask = bgNib ? (~mask & 0x00ffffffu) : 0;
+        masks[i] = fgMask | bgMask;
+        vals[i] = (fgWord & fgMask) | (bgWord & bgMask);
       }
 
-      fgColor = maskText80Dual[fgColor];
-      bgColor = maskText80Dual[bgColor];
+      const uint32_t mask0 = masks[0] | (masks[1] << 24);
+      const uint32_t mask1 = (masks[1] >> 8) | (masks[2] << 16);
+      const uint32_t mask2 = (masks[2] >> 16) | (masks[3] << 8);
 
-      int fgBgTransp = (((bool)fgColor) << 1) | ((bool)bgColor);
-      if (!fgBgTransp)
-      {
-        pixels += TEXT_CHAR_WIDTH / 2;
-        continue;
-      }
+      const uint32_t val0 = vals[0] | (vals[1] << 24);
+      const uint32_t val1 = (vals[1] >> 8) | (vals[2] << 16);
+      const uint32_t val2 = (vals[2] >> 16) | (vals[3] << 8);
 
-
-      const uint32_t mask1 = maskText80Fg[pattByte >> 6];
-      const uint32_t mask2 = maskText80Fg[(pattByte >> 4) & 0x03];
-      const uint32_t mask3 = maskText80Fg[(pattByte >> 2) & 0x03];
-
-      switch (fgBgTransp)
-      {
-        case 3:
-          *pixels++ = (fgColor & mask1) | (bgColor & ~mask1);
-          *pixels++ = (fgColor & mask2) | (bgColor & ~mask2);
-          *pixels++ = (fgColor & mask3) | (bgColor & ~mask3);
-          break;
-
-        case 2:
-          *pixels++ = (fgColor & mask1) | (*pixels & ~mask1);
-          *pixels++ = (fgColor & mask2) | (*pixels & ~mask2);
-          *pixels++ = (fgColor & mask3) | (*pixels & ~mask3);
-          break;
-
-        case 1:
-          *pixels++ = (*pixels & mask1) | (bgColor & ~mask1);
-          *pixels++ = (*pixels & mask2) | (bgColor & ~mask2);
-          *pixels++ = (*pixels & mask3) | (bgColor & ~mask3);
-          break;
-      }
+      *pix32++ = (*pix32 & ~mask0) | (val0 & mask0);
+      *pix32++ = (*pix32 & ~mask1) | (val1 & mask1);
+      *pix32++ = (*pix32 & ~mask2) | (val2 & mask2);
     }
   }
 }
