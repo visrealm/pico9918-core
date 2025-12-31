@@ -1060,11 +1060,11 @@ static void renderText80Layer(
   uint8_t *__restrict pixels)
 {
   const uint8_t bgc = tmsMainBgColor(tms9918);
+  const uint32_t* colorTable32 = (const uint32_t*)__builtin_assume_aligned(colorTable, 4);
+  uint32_t* pix32 = (uint32_t*)__builtin_assume_aligned(pixels, 4);
 
   if (opaq)
   {
-    uint32_t* pix32 = (uint32_t*)__builtin_assume_aligned(pixels, 4);
-    const uint32_t* colorTable32 = (const uint32_t*)__builtin_assume_aligned(colorTable, 4);
     uint8_t lastColor = 0;
     uint32_t bgColorMask = text80ColorWord[bgc];
     uint32_t fgColorMask = text80ColorWord[bgc];
@@ -1099,13 +1099,6 @@ static void renderText80Layer(
   }
   else
   {
-    const uint32_t* colorTable32 = (const uint32_t*)__builtin_assume_aligned(colorTable, 4);
-    uint32_t* pix32 = (uint32_t*)__builtin_assume_aligned(pixels, 4);
-    uint8_t lastColor = 0xff;
-    uint32_t fgWord = 0;
-    uint32_t bgWord = 0;
-    int fgBgTransp = 0;
-
     for (uint8_t tileX = 0; tileX < TEXT80_NUM_COLS; tileX += 4)
     {
       uint32_t colorWord = *colorTable32++;
@@ -1114,25 +1107,17 @@ static void renderText80Layer(
 
       for (int i = 0; i < 4; ++i)
       {
-        const uint8_t pattId = *rowNamesTable++;
-        const uint8_t pattIdx = patternTable[pattId * PATTERN_BYTES] >> 2;
-
+        const uint32_t mask = text80MaskWord[patternTable[*rowNamesTable++ * PATTERN_BYTES] >> 2];
+        
         const uint8_t colorByte = (uint8_t)colorWord;
         colorWord >>= 8;
 
-        const uint8_t bgNib = colorByte & 0xf;
-        const uint8_t fgNib = colorByte >> 4;
+        const uint32_t fgWord = text80ColorWord[colorByte >> 4];
+        const uint32_t bgWord = text80ColorWord[colorByte & 0xf];
 
-        if (colorByte != lastColor)
-        {
-          fgWord = text80ColorWord[fgNib];
-          bgWord = text80ColorWord[bgNib];
-          lastColor = colorByte;
-        }
+        const uint32_t fgMask = fgWord ? mask : 0;
+        const uint32_t bgMask = bgWord ? ~mask : 0;
 
-        const uint32_t mask = text80MaskWord[pattIdx];
-        const uint32_t fgMask = fgNib ? mask : 0;
-        const uint32_t bgMask = bgNib ? (~mask & 0x00ffffffu) : 0;
         masks[i] = fgMask | bgMask;
         vals[i] = (fgWord & fgMask) | (bgWord & bgMask);
       }
