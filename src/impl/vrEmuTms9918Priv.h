@@ -67,7 +67,7 @@
 #elif VR_EMU_TMS9918_MODE == VR_EMU_TMS9918_MODE_V9938
   #define VRAM_SIZE            (1 << 17) /* 128kB */
   #define TMS_REGISTERS        64
-  #define TMS_STATUS_REGISTERS 1
+  #define TMS_STATUS_REGISTERS 10
   #define MAPPED_REGISTERS 0
   #define MAPPED_STATUS 0
 #else
@@ -227,12 +227,16 @@ inline uint8_t vrEmuTms9918ReadStatusImpl(VR_EMU_INST_ONLY_ARG)
   tms9918->palWriteStage = 0;
   TMS_REGISTER(tms9918, 0x2f) &= 0x7f; // reset data port palette mode
 
-  if ((TMS_REGISTER(tms9918, 0x0F) & 0x0F) == 0) {
+  if ((TMS_REGISTER(tms9918, 0x0F) & 0x0F) == 0)
+  {
     const uint8_t tmpStatus = TMS_STATUS(tms9918, 0);
     TMS_STATUS(tms9918, 0) = 0x1f;
     return tmpStatus;
-  } else
+  }
+  else
+  {
     return TMS_STATUS(tms9918, TMS_REGISTER(tms9918, 0x0F) & 0x0F);
+  }
 }
 
 /* Function:  vrEmuTms9918PeekStatus
@@ -344,8 +348,7 @@ inline void vrEmuTms9918InterruptSetImpl(VR_EMU_INST_ONLY_ARG)
  * --------------------
  * set status flag
  */
-inline
-void vrEmuTms9918SetStatusImpl(VR_EMU_INST_ARG uint8_t status)
+inline void vrEmuTms9918SetStatusImpl(VR_EMU_INST_ARG uint8_t status)
 {
   TMS_STATUS(tms9918, 0) = status;
 }
