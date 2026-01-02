@@ -1015,14 +1015,14 @@ static void __time_critical_func(vrEmuTms9918TextScanLine)(VR_EMU_INST_ARG uint1
 static const uint8_t __aligned(4) maskText80Fg[] = { 0x00, 0x0f, 0xf0, 0xff };
 static const uint8_t __aligned(4) maskText80Dual[] = { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
 
-#define TEXT80_COLOR_WORD(n) ((uint32_t)(((n) | ((n) << 4)) * 0x010101u))
+#define TEXT80_COLOR_WORD(n) ((uint32_t)((n) * 0x111111u))
 #define TEXT80_MASK_WORD(bits) ( \
-  ((uint32_t)((bits) & 0x20 ? 0x000000F0u : 0x0)) | \
-  ((uint32_t)((bits) & 0x10 ? 0x0000000Fu : 0x0)) | \
-  ((uint32_t)((bits) & 0x08 ? 0x0000F000u : 0x0)) | \
-  ((uint32_t)((bits) & 0x04 ? 0x00000F00u : 0x0)) | \
-  ((uint32_t)((bits) & 0x02 ? 0x00F00000u : 0x0)) | \
-  ((uint32_t)((bits) & 0x01 ? 0x000F0000u : 0x0)))
+  ((uint32_t)((bits) & 0x20 ? 0x0000F0u : 0x0)) | \
+  ((uint32_t)((bits) & 0x10 ? 0x00000Fu : 0x0)) | \
+  ((uint32_t)((bits) & 0x08 ? 0x00F000u : 0x0)) | \
+  ((uint32_t)((bits) & 0x04 ? 0x000F00u : 0x0)) | \
+  ((uint32_t)((bits) & 0x02 ? 0xF00000u : 0x0)) | \
+  ((uint32_t)((bits) & 0x01 ? 0x0F0000u : 0x0)))
 
 static const uint32_t text80ColorWord[16] = {
   TEXT80_COLOR_WORD(0x0), TEXT80_COLOR_WORD(0x1), TEXT80_COLOR_WORD(0x2), TEXT80_COLOR_WORD(0x3),
@@ -1108,7 +1108,7 @@ static void renderText80Layer(
       for (int i = 0; i < 4; ++i)
       {
         const uint32_t mask = text80MaskWord[patternTable[*rowNamesTable++ * PATTERN_BYTES] >> 2];
-        
+
         const uint8_t colorByte = (uint8_t)colorWord;
         colorWord >>= 8;
 
@@ -2179,7 +2179,9 @@ VR_EMU_TMS9918_DLLEXPORT uint8_t __time_critical_func(vrEmuTms9918ScanLine)(VR_E
     dma_channel_set_trans_count(dma32, TMS9918_PIXELS_X / 4, false);
   }
 
-  tmsCachedMode = tmsMode(tms9918);
+  vrEmuTms9918Mode currentCachedMode = tmsMode(tms9918);
+  if (currentCachedMode != tmsCachedMode) tms9918->palDirty = 1;
+  tmsCachedMode = currentCachedMode;
 
   /* clear the buffer with background color */
   bg = repeatedPalette[tmsMainBgColor(tms9918)];
@@ -2290,6 +2292,7 @@ void __time_critical_func(vrEmuTms9918WriteRegValue)(VR_EMU_INST_ARG vrEmuTms991
     }
     
     TMS_REGISTER(tms9918, regIndex) = value;
+
     if (regIndex < 0x0f) return;
 
     if ((regIndex == 0x37) || ((regIndex == 0x38) && ((value & 1) == 0)))
