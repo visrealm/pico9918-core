@@ -2102,33 +2102,33 @@ static  __attribute__((noinline)) void __time_critical_func(vrEmuTms9918Graphics
 
   dma_channel_wait_for_finish_blocking(dma32); 
 
+  uint32_t* quadPixels = (uint32_t*)__builtin_assume_aligned(pixels, 4);
+
   /* iterate over each tile in this row */
   for (uint8_t tileX = 0; tileX < GRAPHICS_NUM_COLS; ++tileX)
   {
     uint8_t pattIdx = tms9918->vram.bytes[rowNamesAddr + tileX] & nameMask;
 
     const size_t pattRowOffset = pattIdx * PATTERN_BYTES;
-    int8_t pattByte = patternTable[pattRowOffset];
+    const uint8_t patt = patternTable[pattRowOffset];
     const uint8_t colorByte = colorTable[pattRowOffset];    
     
     // apply F18A palette. TODO put behind unlocked
     uint8_t bgColor = colorByte & 0x0f;
     uint8_t fgColor = colorByte >> 4;
 
-    if (bgColor) {bgColor |= palette;} else {bgColor = tmsMainBgColor(tms9918);}
-    if (fgColor) {fgColor |= palette;} else {fgColor = tmsMainBgColor(tms9918);}
+    if (bgColor) {bgColor |= palette;} else {bgColor = tmsMainBgColor(tms9918);} 
+    if (fgColor) {fgColor |= palette;} else {fgColor = tmsMainBgColor(tms9918);} 
 
-    const uint32_t bgFgColor[] = {
-      bgColor,
-      fgColor
-    };
+    const uint32_t bgPalette = repeatedPalette[bgColor];
+    const uint32_t fgPalette = repeatedPalette[fgColor];
 
-    /* iterate over each bit of this pattern byte */
-    for (uint8_t pattBit = 0; pattBit < GRAPHICS_CHAR_WIDTH; ++pattBit)
-    {
-      *(pixels++) = bgFgColor[pattByte < 0];
-      pattByte <<= 1;
-    }
+    const uint32_t leftMask = maskExpandNibbleToWordRev[patt >> 4];
+    const uint32_t rightMask = maskExpandNibbleToWordRev[patt & 0x0f];
+
+    quadPixels[0] = (fgPalette & leftMask) | (bgPalette & ~leftMask);
+    quadPixels[1] = (fgPalette & rightMask) | (bgPalette & ~rightMask);
+    quadPixels += 2;
   }
 }
 
