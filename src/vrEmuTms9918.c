@@ -1813,7 +1813,7 @@ static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ARG uint16_
   if (attrPerPos)
   {
     colorTableAddr += rowOffset;
-    if (swapYPage) colorTableAddr ^= 0x800;
+    colorTableAddr |= rowNamesAddr & 0xc00;
   }
 
 
