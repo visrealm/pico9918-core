@@ -715,7 +715,7 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
       continue;
     }
 
-    if (spriteAttrColor & 0x20) pattRow = thisSpriteSize - pattRow; // flip Y?
+    if (spriteAttrColor & 0x20) pattRow = thisSpriteSize - pattRow - 1; // flip Y?
 
     /* sprite is visible on this line */
     uint8_t spriteColor = (spriteAttrColor & ecmColorMask) << ecmColorOffset;
