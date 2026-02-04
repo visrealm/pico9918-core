@@ -802,7 +802,7 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
     }
 
     // Render valid pixels to the scanline
-    if (spriteColor != TMS_TRANSPARENT)
+    if (ecm || (spriteColor != TMS_TRANSPARENT))
     {
       tms9918->scanlineHasSprites = true;
       spriteColor |= pal;
