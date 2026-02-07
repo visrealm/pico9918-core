@@ -759,7 +759,7 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
       }
     }
 
-    if (opaq) pattMask = -1;  // 0xffffffff
+    if (opaq) pattMask = 0xffff0000;
 
     /* bail early if no bits to draw */
     if (!pattMask)
