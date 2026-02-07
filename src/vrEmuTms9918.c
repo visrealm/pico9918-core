@@ -676,14 +676,23 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
     uint8_t thisSpriteIdxMask = spriteIdxMask;
     uint8_t thisSpriteSizePx = spriteSizePx;
     uint8_t spriteAttrColor = spriteAttr[SPRITE_ATTR_COLOR];
+    bool opaq = false;
     if (!tms9918->isUnlocked) spriteAttrColor &= 0x8f;
 
-    if (!sprite16 && (spriteAttrColor & 0x10))
+    if (spriteAttrColor & 0x10)
     {
-      thisSpriteSize = 16;
-      thisSprite16 = true;
-      thisSpriteIdxMask = 0xfc;
-      thisSpriteSizePx = thisSpriteSize << spriteMag;
+      if (sprite16) 
+      {
+        // PICO9918-specific. If all sprites are 16px anyway, this bit is used to have opaque sprites
+        opaq = true;
+      }
+      else
+      {
+        thisSpriteSize = 16;
+        thisSprite16 = true;
+        thisSpriteIdxMask = 0xfc;
+        thisSpriteSizePx = thisSpriteSize << spriteMag;
+      }
     }
 
     /* check if sprite is visible on this line */
@@ -732,11 +741,14 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
     const bool flipX = spriteAttrColor & 0x40;
 
     if (flipX)
+    {
       if (thisSprite16)
         loadSpriteData(spriteBits, pattOffset, &pattMask, ecm, ecmOffset, true, true);
       else
         loadSpriteData(spriteBits, pattOffset, &pattMask, ecm, ecmOffset, true, false);
+    }
     else
+    {
       if (thisSprite16)
       {
         loadSpriteData(spriteBits, pattOffset, &pattMask, ecm, ecmOffset, false, true);
@@ -745,6 +757,9 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
       {
         loadSpriteData(spriteBits, pattOffset, &pattMask, ecm, ecmOffset, false, false);
       }
+    }
+
+    if (opaq) pattMask = -1;  // 0xffffffff
 
     /* bail early if no bits to draw */
     if (!pattMask)
