@@ -1520,7 +1520,7 @@ static inline uint32_t* renderEcmTile(
   /* retreive the pixel data for each ecm bitplane, and generate a
      combined mask while we're at it. if the mask has a bit set
      then we have a non-zero pixel at that location */
-  uint32_t patt[3]; // indexes into this are reversed. ecm3 is in index 0
+  uint32_t patt[3] = {0}; // indexes into this are reversed. ecm3 is in index 0
 
 
   switch (ecm)
@@ -1715,7 +1715,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
             if (hpSize)
             {
               rowNamesAddr ^= 0x400;
-              if (attrPerPos) colorTableAddr ^= 0x400;
+              if (attrPerPos) colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
             }
             tileIndex = 0;
           }
@@ -1737,7 +1737,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
             if (hpSize)
             {
               rowNamesAddr ^= 0x400;
-              if (attrPerPos) colorTableAddr ^= 0x400;
+              if (attrPerPos) colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
             }
             tileIndex = 0;
           }
@@ -1762,7 +1762,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
           if (hpSize)
           {
             rowNamesAddr ^= 0x400;
-            if (attrPerPos) colorTableAddr ^= 0x400;
+            if (attrPerPos) colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
           }
           tileIndex = 0;
         }
@@ -1809,7 +1809,7 @@ static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ARG uint16_
     if (virtY >= maxY)
     {
       virtY -= maxY;
-      swapYPage = TMS_REGISTER(tms9918, 0x1d) & 0x01;
+      swapYPage = (bool)(TMS_REGISTER(tms9918, 0x1d) & 0x01);
     }
    
     y = virtY;
@@ -1827,8 +1827,8 @@ static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ARG uint16_
   uint16_t colorTableAddr = tmsColorTableAddr(tms9918);
   if (attrPerPos)
   {
+    colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
     colorTableAddr += rowOffset;
-    colorTableAddr |= rowNamesAddr & 0xc00;
   }
 
 
@@ -1878,8 +1878,8 @@ static void __time_critical_func(vrEmuF18ATile2ScanLine)(VR_EMU_INST_ARG uint16_
   uint16_t colorTableAddr = tmsColorTable2Addr(tms9918);
   if (attrPerPos)
   {
+    colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
     colorTableAddr += rowOffset;
-    colorTableAddr |= rowNamesAddr & 0xc00;
   }
 
   const uint8_t pal = (TMS_REGISTER(tms9918, 0x18) & 0x0c) << 2;
