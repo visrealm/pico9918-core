@@ -1715,7 +1715,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
             if (hpSize)
             {
               rowNamesAddr ^= 0x400;
-              if (attrPerPos) colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
+              if (attrPerPos) colorTableAddr ^= 0x400;
             }
             tileIndex = 0;
           }
@@ -1737,7 +1737,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
             if (hpSize)
             {
               rowNamesAddr ^= 0x400;
-              if (attrPerPos) colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
+              if (attrPerPos) colorTableAddr ^= 0x400;
             }
             tileIndex = 0;
           }
@@ -1762,7 +1762,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
           if (hpSize)
           {
             rowNamesAddr ^= 0x400;
-            if (attrPerPos) colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
+            if (attrPerPos) colorTableAddr ^= 0x400;
           }
           tileIndex = 0;
         }
@@ -1827,7 +1827,8 @@ static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ARG uint16_
   uint16_t colorTableAddr = tmsColorTableAddr(tms9918);
   if (attrPerPos)
   {
-    colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
+    colorTableAddr = (colorTableAddr & ~0x400) | (rowNamesAddr & 0x400);
+    if (swapYPage) colorTableAddr ^= 0x800;
     colorTableAddr += rowOffset;
   }
 
@@ -1878,7 +1879,8 @@ static void __time_critical_func(vrEmuF18ATile2ScanLine)(VR_EMU_INST_ARG uint16_
   uint16_t colorTableAddr = tmsColorTable2Addr(tms9918);
   if (attrPerPos)
   {
-    colorTableAddr = (colorTableAddr & ~0xc00) | (rowNamesAddr & 0xc00);
+    colorTableAddr = (colorTableAddr & ~0x400) | (rowNamesAddr & 0x400);
+    if (swapYPage) colorTableAddr ^= 0x800;
     colorTableAddr += rowOffset;
   }
 
