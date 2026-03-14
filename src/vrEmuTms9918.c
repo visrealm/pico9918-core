@@ -13,18 +13,21 @@
 
 #include "impl/vrEmuTms9918Priv.h"
 
-#include "pico/divider.h"
-#include "hardware/dma.h"
-
 #include <string.h>
 
 #define R0_DOUBLE_ROWS 0x08
 
 
-static unsigned int dma8 = 4;
-static unsigned int dma32 = 3;
+#ifdef PICO_BUILD
+unsigned int vrTmsDma8  = 4;
+unsigned int vrTmsDma32 = 3;
+#else
+/* desktop stubs for VR_TMS_FILL32 */
+void*    _vrTmsFill32Src   = NULL;
+unsigned _vrTmsFill32Count = 0;
+#endif
 
-static __attribute__((section(".scratch_x.buffer"))) uint32_t bg; 
+VR_TMS_SECTION_SCRATCH_X(buffer) static uint32_t vrTmsBg;
 
 
 #if VR_EMU_TMS9918_SINGLE_INSTANCE
@@ -43,11 +46,15 @@ vrEmuTms9918Mode tmsCachedMode = TMS_MODE_GRAPHICS_I;
 VR_EMU_TMS9918_DLLEXPORT
 void __time_critical_func(vrEmuTms9918Init)()
 {
-  dma_channel_config cfg = dma_channel_get_default_config(dma8);
-  channel_config_set_read_increment(&cfg, false);
-  channel_config_set_write_increment(&cfg, true);
-  channel_config_set_transfer_data_size(&cfg, DMA_SIZE_8);
-  dma_channel_set_config(dma8, &cfg, false);
+#ifdef PICO_BUILD
+  {
+    dma_channel_config cfg = dma_channel_get_default_config(vrTmsDma8);
+    channel_config_set_read_increment(&cfg, false);
+    channel_config_set_write_increment(&cfg, true);
+    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_8);
+    dma_channel_set_config(vrTmsDma8, &cfg, false);
+  }
+#endif
 
   vrEmuTms9918Reset(tms9918);
 }
@@ -216,14 +223,12 @@ static inline vrEmuTms9918Color tmsBgColor(VrEmuTms9918* tms9918, uint8_t colorB
 
 /* Function:  tmsMemset
  * ----------------------------------------
- * memset using rp2040 hardware dma
+ * memset using rp2040 hardware dma (or plain memset on desktop)
  */
 static void tmsMemset(uint8_t* ptr, uint8_t val8, int count, bool wait)
 {
-  dma_channel_set_read_addr(dma8, &val8, false);
-  dma_channel_set_trans_count(dma8, count, false);
-  dma_channel_set_write_addr(dma8, ptr, true);
-  if (wait) dma_channel_wait_for_finish_blocking(dma8);
+  (void)wait;
+  VR_TMS_MEMSET8(ptr, val8, count);
 }
 
 // default palette 0xARGB
@@ -390,9 +395,9 @@ void __time_critical_func(vrEmuTms9918SetStatus)(VR_EMU_INST_ARG uint8_t status)
   vrEmuTms9918SetStatusImpl(VR_EMU_INST status);
 }
 
-static __attribute__((section(".scratch_x.lookup"))) uint32_t __aligned(4) rowSpriteBits[TMS9918_PIXELS_X / 32];             /* collision mask */
-static __attribute__((section(".scratch_x.lookup"))) uint32_t __aligned(4) rowTransparentSpriteBits[TMS9918_PIXELS_X / 32];  /* transparent sprite pixels */
-static __attribute__((section(".scratch_x.lookup"))) uint32_t __aligned(4) rowBits[TMS9918_PIXELS_X / 32];                   /* pixel mask */
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint32_t __aligned(4) rowSpriteBits[TMS9918_PIXELS_X / 32];             /* collision mask */
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint32_t __aligned(4) rowTransparentSpriteBits[TMS9918_PIXELS_X / 32];  /* transparent sprite pixels */
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint32_t __aligned(4) rowBits[TMS9918_PIXELS_X / 32];                   /* pixel mask */
 
 /* Function:  tmsTestCollisionMask
  * ----------------------------------------
@@ -516,7 +521,7 @@ static uint8_t  __aligned(4) doubledBitsNibble[16] = {
 };
 
 /* lookup for doubling pixel patterns in mag mode */
-static __attribute__((section(".scratch_x.lookup"))) uint16_t __aligned(4) doubledBits[256];
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint16_t __aligned(4) doubledBits[256];
 static void doubledBitsInit()
 {
   for (int i = 0; i < 256; ++i)
@@ -526,7 +531,7 @@ static void doubledBitsInit()
 }
 
 /* reversed bits in a byte */
-static __attribute__((section(".scratch_x.lookup"))) uint8_t __aligned(4) reversedBits[256];
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint8_t __aligned(4) reversedBits[256];
 
 static uint8_t reverseBits(uint8_t byte) {
     byte = (byte & 0xf0) >> 4 | (byte & 0x0f) << 4;
@@ -543,7 +548,7 @@ static void reversedBitsInit()
 }
 
 /* a lookup to apply a 6-bit palette to 4 bytes of a uint32_t */
-static __attribute__((section(".scratch_x.lookup"))) uint32_t __aligned(4) repeatedPalette[64];
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint32_t __aligned(4) repeatedPalette[64];
 static void repeatedPaletteInit()
 {
   for (int i = 0; i < 64; ++i)
@@ -553,7 +558,7 @@ static void repeatedPaletteInit()
 }
 
 /* a lookup from a 4-bit mask to a word of 8-bit masks (reversed byte order) */
-static __attribute__((section(".scratch_x.lookup"))) uint32_t __aligned(4) maskExpandNibbleToWordRev[16] =
+VR_TMS_SECTION_SCRATCH_X(lookup) static uint32_t __aligned(4) maskExpandNibbleToWordRev[16] =
 {
   0x00000000, 0xff000000, 0x00ff0000, 0xffff0000,
   0x0000ff00, 0xff00ff00, 0x00ffff00, 0xffffff00,
@@ -1014,7 +1019,7 @@ static void __time_critical_func(vrEmuTms9918TextScanLine)(VR_EMU_INST_ARG uint1
 
   pixPtr += TEXT_PADDING_PX;
 
-  dma_channel_wait_for_finish_blocking(dma32); 
+  VR_TMS_FILL32_WAIT();
 
   for (uint8_t tileX = 0; tileX < TEXT_NUM_COLS; ++tileX)
   {
@@ -1189,7 +1194,7 @@ static void __time_critical_func(vrEmuTms9918Text80ScanLine)(VR_EMU_INST_ARG uin
 
   pixels += TEXT_PADDING_PX;
 
-  dma_channel_wait_for_finish_blocking(dma32); 
+  VR_TMS_FILL32_WAIT();
 
   if (TMS_REGISTER(tms9918, 0x32) & 0x02)  // position-based attributes
   {
@@ -1694,7 +1699,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
         pal = 0;
       }
 
-      dma_channel_wait_for_finish_blocking(dma32); 
+      VR_TMS_FILL32_WAIT();
 
       if (startPattBit)
       {
@@ -1776,7 +1781,7 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
   }
   else
   {
-    dma_channel_wait_for_finish_blocking(dma32); 
+    VR_TMS_FILL32_WAIT();
 
     while (numTiles--)
     {
@@ -1928,7 +1933,7 @@ static inline bool __time_critical_func(renderBitmapLayer)(VR_EMU_INST_ARG uint1
 
     uint8_t pal = (bmlCtl & 0xc) << 2;
     
-    dma_channel_wait_for_finish_blocking(dma32); 
+    VR_TMS_FILL32_WAIT();
 
     for (int xOff = 0; xOff < width; ++xOff)
     {
@@ -1971,7 +1976,7 @@ static inline bool __time_critical_func(renderBitmapLayer)(VR_EMU_INST_ARG uint1
 
     uint8_t pal = (bmlCtl & 0xf) << 2;
 
-    dma_channel_wait_for_finish_blocking(dma32); 
+    VR_TMS_FILL32_WAIT();
 
     for (int xOff = 0; xOff < width; ++xOff)
     {
@@ -2078,7 +2083,7 @@ static uint8_t __time_critical_func(vrEmuTms9918GraphicsIScanLine)(VR_EMU_INST_A
     const bool hpSize = 0;
     const bool isTile2 = false;
 
-    dma_channel_wait_for_finish_blocking(dma32); 
+    VR_TMS_FILL32_WAIT();
 
     vrEmuF18ATileScanLine(VR_EMU_INST y, hpSize, rowNamesAddr, colorTableAddr, rowOffset, tileIndex, startPattBit, attrPerPos, pal, isTile2, 0, pixels);
 
@@ -2117,7 +2122,7 @@ static  __attribute__((noinline)) void __time_critical_func(vrEmuTms9918Graphics
 
   uint8_t palette = (TMS_REGISTER(tms9918, 0x18) & 0x03) << 4;
 
-  dma_channel_wait_for_finish_blocking(dma32); 
+  VR_TMS_FILL32_WAIT();
 
   uint32_t* quadPixels = (uint32_t*)__builtin_assume_aligned(pixels, 4);
 
@@ -2163,7 +2168,7 @@ static void __time_critical_func(vrEmuTms9918MulticolorScanLine)(VR_EMU_INST_ARG
 
   uint32_t *quadPixels = (uint32_t *)pixels;
 
-  dma_channel_wait_for_finish_blocking(dma32); 
+  VR_TMS_FILL32_WAIT();
 
   for (uint8_t tileX = 0; tileX < GRAPHICS_NUM_COLS; ++tileX)
   {
@@ -2176,6 +2181,77 @@ static void __time_critical_func(vrEmuTms9918MulticolorScanLine)(VR_EMU_INST_ARG
   }
 }
 	
+/* =========================================================================
+ * Display mode vtable
+ * ========================================================================= */
+
+#include "modes/vrEmuTmsModeOps.h"
+
+/* Per-mode scanline wrappers — each wraps the internal renderer and handles
+ * the sprite/bitmap overlay calls for that mode. */
+
+static uint8_t __time_critical_func(scanlineGraphicsI)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+{
+  return vrEmuTms9918GraphicsIScanLine(VR_EMU_INST y, pixels);
+}
+
+static uint8_t __time_critical_func(scanlineGraphicsII)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+{
+  vrEmuTms9918GraphicsIIScanLine(VR_EMU_INST y, pixels);
+  uint8_t st = vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+  if (tms9918->isUnlocked)
+    vrEmuTms9918BitmapLayerScanLine(VR_EMU_INST y, pixels);
+  return st;
+}
+
+static uint8_t __time_critical_func(scanlineText)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+{
+  vrEmuTms9918TextScanLine(VR_EMU_INST y, pixels);
+  if (tms9918->isUnlocked)
+    return vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+  return 0;
+}
+
+static uint8_t __time_critical_func(scanlineMulticolor)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+{
+  vrEmuTms9918MulticolorScanLine(VR_EMU_INST y, pixels);
+  return vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+}
+
+static uint8_t __time_critical_func(scanlineText80)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+{
+  vrEmuTms9918Text80ScanLine(VR_EMU_INST y, pixels);
+  if (tms9918->isUnlocked)
+    return vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+  return 0;
+}
+
+/* Per-mode ops structs */
+const VrEmuTmsDisplayModeOps vrTmsModeOpsGraphicsI  = { scanlineGraphicsI,  "Graphics-I"  };
+const VrEmuTmsDisplayModeOps vrTmsModeOpsGraphicsII = { scanlineGraphicsII, "Graphics-II" };
+const VrEmuTmsDisplayModeOps vrTmsModeOpsText       = { scanlineText,       "Text"        };
+const VrEmuTmsDisplayModeOps vrTmsModeOpsMulticolor = { scanlineMulticolor, "Multicolor"  };
+const VrEmuTmsDisplayModeOps vrTmsModeOpsText80     = { scanlineText80,     "Text80"      };
+
+/* Mode table — indexed by vrEmuTms9918Mode */
+static const VrEmuTmsDisplayModeOps* const vrTmsModeOpsTable[TMS_MODE_COUNT] = {
+  &vrTmsModeOpsGraphicsI,   /* TMS_MODE_GRAPHICS_I  */
+  &vrTmsModeOpsGraphicsII,  /* TMS_MODE_GRAPHICS_II */
+  &vrTmsModeOpsText,        /* TMS_MODE_TEXT        */
+  &vrTmsModeOpsMulticolor,  /* TMS_MODE_MULTICOLOR  */
+  &vrTmsModeOpsText80,      /* TMS_MODE_TEXT80      */
+#if VR_EMU_TMS9918_MODE == VR_EMU_TMS9918_MODE_V9938
+  &vrTmsModeOpsV9938G3,     /* TMS_MODE_V9938_G3    */
+  &vrTmsModeOpsV9938G4,     /* TMS_MODE_V9938_G4    */
+  &vrTmsModeOpsV9938G5,     /* TMS_MODE_V9938_G5    */
+  &vrTmsModeOpsV9938G6,     /* TMS_MODE_V9938_G6    */
+  &vrTmsModeOpsV9938G7,     /* TMS_MODE_V9938_G7    */
+#endif
+};
+
+/* Active mode ops — cached and updated when mode changes */
+const VrEmuTmsDisplayModeOps* vrTmsActiveModeOps = &vrTmsModeOpsGraphicsI;
+
 /* Function:  vrEmuTms9918ScanLine
  * ----------------------------------------
  * generate a scanline
@@ -2187,23 +2263,21 @@ VR_EMU_TMS9918_DLLEXPORT uint8_t __time_critical_func(vrEmuTms9918ScanLine)(VR_E
   if (!lookupsReady)
   {
     initLookups();
-    dma_channel_config cfg = dma_channel_get_default_config(dma32);
-	  channel_config_set_read_increment(&cfg, false);
-	  channel_config_set_write_increment(&cfg, true);
-	  channel_config_set_transfer_data_size(&cfg, DMA_SIZE_32);
-	  dma_channel_set_config(dma32, &cfg, false);
-    dma_channel_set_read_addr(dma32, &bg, false);
-    dma_channel_set_trans_count(dma32, TMS9918_PIXELS_X / 4, false);
+    VR_TMS_FILL32_INIT(&vrTmsBg, TMS9918_PIXELS_X / 4);
   }
 
   vrEmuTms9918Mode currentCachedMode = tmsMode(tms9918);
-  if (currentCachedMode != tmsCachedMode) tms9918->palDirty = 1;
-  tmsCachedMode = currentCachedMode;
+  if (currentCachedMode != tmsCachedMode)
+  {
+    tmsCachedMode = currentCachedMode;
+    vrTmsActiveModeOps = vrTmsModeOpsTable[tmsCachedMode];
+    tms9918->palDirty = 1;
+  }
 
   /* clear the buffer with background color */
-  bg = repeatedPalette[tmsMainBgColor(tms9918)];
-  if (tmsCachedMode == TMS_MODE_TEXT80) bg |= bg << 4;
-  dma_channel_set_write_addr(dma32, pixels, true);
+  vrTmsBg = repeatedPalette[tmsMainBgColor(tms9918)];
+  if (tmsCachedMode == TMS_MODE_TEXT80) vrTmsBg |= vrTmsBg << 4;
+  VR_TMS_FILL32_START(pixels);
 
   bool dispActive = (TMS_REGISTER(tms9918, TMS_REG_1) & TMS_R1_DISP_ACTIVE);
 
@@ -2217,42 +2291,7 @@ VR_EMU_TMS9918_DLLEXPORT uint8_t __time_critical_func(vrEmuTms9918ScanLine)(VR_E
     }
     tms9918->scanlineHasSprites = false;
 
-    switch (tmsCachedMode)
-    {
-      case TMS_MODE_GRAPHICS_I:
-        tempStatus = vrEmuTms9918GraphicsIScanLine(VR_EMU_INST y, pixels);
-        break;
-
-      case TMS_MODE_GRAPHICS_II:
-        vrEmuTms9918GraphicsIIScanLine(VR_EMU_INST y, pixels);
-        tempStatus = vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
-
-        if (tms9918->isUnlocked)
-        {
-         // const bool tilesDisabled = TMS_REGISTER(tms9918, 0x32) & 0x10;
-
-          vrEmuTms9918BitmapLayerScanLine(VR_EMU_INST y, pixels);
-        }
-
-        break;
-
-      case TMS_MODE_TEXT:
-        vrEmuTms9918TextScanLine(VR_EMU_INST y, pixels);
-        if (tms9918->isUnlocked)
-          tempStatus = vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
-        break;
-
-      case TMS_MODE_MULTICOLOR:
-        vrEmuTms9918MulticolorScanLine(VR_EMU_INST y, pixels);
-        tempStatus = vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
-        break;
-
-      case TMS_MODE_TEXT80:
-        vrEmuTms9918Text80ScanLine(VR_EMU_INST y, pixels);
-        if (tms9918->isUnlocked)
-          tempStatus = vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
-        break;
-    }
+    tempStatus = vrTmsActiveModeOps->scanlineFn(VR_EMU_INST y, pixels);
   }
 
   return tempStatus;

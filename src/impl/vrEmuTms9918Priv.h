@@ -1,10 +1,10 @@
 #pragma once
 
+#include "vrEmuTmsPlatform.h"
+
 #ifdef PICO_BUILD
 #include "pico/stdlib.h"
 #define inline __force_inline
-#else
-#define __time_critical_func(fn) fn
 #endif
 
 #include "../vrEmuTms9918.h"
