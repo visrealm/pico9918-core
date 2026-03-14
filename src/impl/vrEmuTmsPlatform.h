@@ -81,7 +81,6 @@
   #define VR_TMS_MEMSET8(ptr, val, n)  memset((ptr), (val), (n))
 
   /* On desktop the bg pointer/count are captured at init time for use in START */
-  extern void*    _vrTmsFill32Dst;   /* not used on desktop but keeps symmetry */
   extern void*    _vrTmsFill32Src;
   extern unsigned _vrTmsFill32Count;
 
@@ -99,37 +98,6 @@
 
 #endif /* PICO_BUILD */
 
-
-/*
- * Divmod abstraction
- * pico/divider.h provides hardware-accelerated div_u32u32 / mod_u32u32.
- * On desktop we use standard C operators.
- */
-#ifdef PICO_BUILD
-  #include "pico/divider.h"
-  /* Use the Pico SDK macros/functions directly */
-#else
-  /* Emulate the divider_result_t struct used by the Pico SDK */
-  typedef struct {
-    uint32_t quotient;
-    uint32_t remainder;
-  } divider_result_t;
-
-  static inline divider_result_t hw_divider_divmod_u32(uint32_t a, uint32_t b)
-  {
-    divider_result_t r;
-    r.quotient  = a / b;
-    r.remainder = a % b;
-    return r;
-  }
-
-  static inline uint32_t to_quotient_u32(divider_result_t r) { return r.quotient; }
-  static inline uint32_t to_remainder_u32(divider_result_t r) { return r.remainder; }
-
-  /* The Pico SDK also exposes these convenience wrappers */
-  static inline uint32_t div_u32u32(uint32_t a, uint32_t b) { return a / b; }
-  static inline uint32_t mod_u32u32(uint32_t a, uint32_t b) { return a % b; }
-#endif /* PICO_BUILD */
 
 
 /*

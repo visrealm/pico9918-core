@@ -13,6 +13,7 @@
 
 #include "impl/vrEmuTms9918Priv.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define R0_DOUBLE_ROWS 0x08
@@ -2406,15 +2407,15 @@ void __time_critical_func(vrEmuTms9918WriteRegValue)(VR_EMU_INST_ARG vrEmuTms991
       if (statReg > 3 && statReg < 12)
       {
         uint32_t elapsed = tms9918->currentTime - tms9918->startTime;
-        divmod_result_t micro = divmod_u32u32(elapsed, 1000);
-        divmod_result_t milli = divmod_u32u32(to_quotient_u32(micro), 1000);
+        div_t micro = div((int)elapsed, 1000);
+        div_t milli = div(micro.quot, 1000);
 
-        TMS_STATUS(tms9918, 0x06) = to_remainder_u32(micro) & 0x0ff; 
-        TMS_STATUS(tms9918, 0x07) = to_remainder_u32(micro) >> 8;
-        TMS_STATUS(tms9918, 0x08) = to_remainder_u32(milli) & 0x0ff;
-        TMS_STATUS(tms9918, 0x09) = to_remainder_u32(milli) >> 8;
-        TMS_STATUS(tms9918, 0x0a) = to_quotient_u32(milli) & 0x00ff;
-        TMS_STATUS(tms9918, 0x0b) = to_quotient_u32(milli) >> 8;
+        TMS_STATUS(tms9918, 0x06) = micro.rem & 0x0ff;
+        TMS_STATUS(tms9918, 0x07) = micro.rem >> 8;
+        TMS_STATUS(tms9918, 0x08) = milli.rem & 0x0ff;
+        TMS_STATUS(tms9918, 0x09) = milli.rem >> 8;
+        TMS_STATUS(tms9918, 0x0a) = milli.quot & 0x00ff;
+        TMS_STATUS(tms9918, 0x0b) = milli.quot >> 8;
       }
     }
     else if (regIndex == 58)  // SR12 holds the value of the option in VR58 (options)
