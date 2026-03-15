@@ -171,7 +171,17 @@ struct vrEmuTMS9918_s
   bool configDirty;
 
   bool scanlineHasSprites;
+
+  /* runtime base VDP selection (independent of F18A unlock) */
+  uint8_t vdpBase;  /* VR_EMU_TMS9918_BASE_TMS9918 or VR_EMU_TMS9918_BASE_V9938 */
 };
+
+/* vdpBase constants */
+#define VR_EMU_TMS9918_BASE_TMS9918  0x00
+#define VR_EMU_TMS9918_BASE_V9938    0x01
+
+/* Config index for runtime base VDP selection */
+#define CONF_VDP_BASE  8
 
 #if VR_EMU_TMS9918_SINGLE_INSTANCE
 extern VrEmuTms9918* tms9918;
@@ -352,3 +362,6 @@ inline void vrEmuTms9918SetStatusImpl(VR_EMU_INST_ARG uint8_t status)
 {
   TMS_STATUS(tms9918, 0) = status;
 }
+
+/* Internal sprite renderer — non-static so vrEmuTmsV9938.c can call it */
+uint8_t vrEmuTms9918OutputSprites(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X]);
