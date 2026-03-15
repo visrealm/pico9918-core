@@ -123,20 +123,6 @@ typedef struct
   * ---------------------- */
 struct vrEmuTMS9918_s
 {
-  union 
-  {
-    uint8_t bytes[VRAM_SIZE];
-    vrEmuTMS9918MemMap map;
-  } vram;
-
-#if !MAPPED_REGISTERS
-  uint8_t registers[TMS_REGISTERS];
-#endif
-
-#if !MAPPED_STATUS
-  uint8_t status[TMS_STATUS_REGISTERS];
-#endif
-
   /* current address for cpu access (auto-increments) */
   uint16_t currentAddress;
 
@@ -163,13 +149,12 @@ struct vrEmuTMS9918_s
   uint8_t palWriteStage0Value;
   uint8_t palDirty;
 
+  /* runtime base VDP selection (independent of F18A unlock) */
+  uint8_t vdpBase;  /* VR_EMU_TMS9918_BASE_TMS9918 or VR_EMU_TMS9918_BASE_V9938 */
+
   uint32_t startTime;
   uint32_t stopTime;
   uint32_t currentTime;
-
-  uint8_t config[256];
-  bool configDirty;
-
   bool scanlineHasSprites;
 
   struct {
@@ -179,10 +164,24 @@ struct vrEmuTMS9918_s
     bool      swapY1Page;  /* T1 name-table page swap flag */
     bool      swapY2Page;  /* T2 name-table page swap flag */
     uint8_t*  pixels;      /* pointer to caller-owned output pixel buffer */
-  } scanCtx;
+  } __attribute__((aligned(4))) scanCtx;
 
-  /* runtime base VDP selection (independent of F18A unlock) */
-  uint8_t vdpBase;  /* VR_EMU_TMS9918_BASE_TMS9918 or VR_EMU_TMS9918_BASE_V9938 */
+  union 
+  {
+    uint8_t bytes[VRAM_SIZE];
+    vrEmuTMS9918MemMap map;
+  } vram;
+
+#if !MAPPED_REGISTERS
+  uint8_t registers[TMS_REGISTERS];
+#endif
+
+#if !MAPPED_STATUS
+  uint8_t status[TMS_STATUS_REGISTERS];
+#endif
+
+  uint8_t config[256];
+  bool configDirty;
 };
 
 /* vdpBase constants */
