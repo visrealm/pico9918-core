@@ -26,7 +26,7 @@ if(VR_EMU_TMS9918_MODE GREATER_EQUAL 1)
   list(APPEND VR_TMS_SOURCES
     gpu/vrEmuTms9918Gpu.c
     gpu/tms9900.c)
-  if(VR_TMS_PICO_BUILD)
+  if(VR_TMS_PICO_BUILD AND NOT VR_TMS_GPU_C_CORE)
     list(APPEND VR_TMS_SOURCES
       gpu/platform/thumb9900${VR_TMS_ASM_SUFFIX}.S)
   endif()
@@ -55,6 +55,10 @@ target_include_directories(${LIBRARY} PRIVATE
 
 target_compile_definitions(${LIBRARY} PRIVATE
   VR_EMU_TMS9918_MODE=${VR_EMU_TMS9918_MODE})
+
+if(VR_TMS_GPU_C_CORE)
+  target_compile_definitions(${LIBRARY} PRIVATE VR_TMS_GPU_C_CORE)
+endif()
 
 # Only link Pico-specific libraries when building for a Pico target
 if(VR_TMS_PICO_BUILD)

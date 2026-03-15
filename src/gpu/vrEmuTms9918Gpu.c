@@ -25,13 +25,15 @@
   #include "hardware/structs/mpu.h"
   #include <hardware/flash.h>
   #include "pico.h" /* PICO_RP2040 */
+#endif
 
+#include "tms9900.h"
+#include "impl/vrEmuTmsPlatform.h" /* time_us_32 */
+
+#if defined(PICO_BUILD) && !defined(VR_TMS_GPU_C_CORE)
   /* run9900() implemented in platform/thumb9900_{m0,m33}.S */
   extern uint16_t run9900(uint8_t* memory, uint16_t pc, uint16_t wp, uint8_t* regx38);
 #else
-  #include "tms9900.h"
-  #include "impl/vrEmuTmsPlatform.h" /* time_us_32 */
-
   static uint16_t run9900(uint8_t* mem, uint16_t pc, uint16_t wp, uint8_t* r38)
   {
     Tms9900Cpu cpu;

@@ -30,6 +30,7 @@
 
 #include <stddef.h>
 
+
 /*
  * Flag helpers
  */
@@ -292,7 +293,15 @@ static inline uint8_t sub8 (Tms9900Cpu* cpu, uint8_t a, uint8_t b)
  */
 static inline void cmp16 (Tms9900Cpu* cpu, uint16_t a, uint16_t b)
 {
-  sub16 (cpu, a, b);
+  /* Compare sets LGT/AGT/EQ only; C and OV are preserved */
+  cpu->st &= 0x1E;
+  if (a == b)
+  {
+    cpu->st |= TMS_ST_EQ;
+    return;
+  }
+  if (a > b) cpu->st |= TMS_ST_LGT; /* unsigned greater */
+  if ((int16_t)a > (int16_t)b) cpu->st |= TMS_ST_AGT; /* signed greater */
 }
 
 /* Function:  cmp16
@@ -301,7 +310,15 @@ static inline void cmp16 (Tms9900Cpu* cpu, uint16_t a, uint16_t b)
  */
 static inline void cmp8 (Tms9900Cpu* cpu, uint8_t a, uint8_t b)
 {
-  sub8 (cpu, a, b);
+  /* Compare sets LGT/AGT/EQ only; C and OV are preserved */
+  cpu->st &= 0x1E;
+  if (a == b)
+  {
+    cpu->st |= TMS_ST_EQ;
+    return;
+  }
+  if (a > b) cpu->st |= TMS_ST_LGT;
+  if ((int8_t)a > (int8_t)b) cpu->st |= TMS_ST_AGT;
 }
 
 /* Function:  cmp8
@@ -489,27 +506,29 @@ static inline int branch_cond (uint16_t st, uint8_t cond)
  */
 static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
 {
-  uint8_t sub = (inst >> 8) & 0xF;
-  uint8_t dest_reg = (inst >> 4) & 0xF;
+  /* Sub-opcode is (inst >> 5) & 0x1F; register is inst & 0xF */
+  uint8_t sub = (uint8_t)((inst >> 5) & 0x1F);
+  uint8_t dest_reg = inst & 0xF;
+
   switch (sub)
   {
-    case 0x0:
-    { /* LI */
+    case 0x10: /* LI — 0x0200 */
+    {
       uint16_t imm = fetchw (cpu);
       set_reg (cpu, dest_reg, imm);
+      cpu->st &= 0x1E;
       set_flags_word (cpu, imm);
       break;
     }
-    case 0x1:
-    { /* AI */
+    case 0x11: /* AI — 0x0220 */
+    {
       uint16_t imm = fetchw (cpu);
-      uint16_t dst = get_reg (cpu, dest_reg);
-      uint16_t res = add16 (cpu, dst, imm);
+      uint16_t res = add16 (cpu, get_reg (cpu, dest_reg), imm);
       set_reg (cpu, dest_reg, res);
       break;
     }
-    case 0x2:
-    { /* ANDI */
+    case 0x12: /* ANDI — 0x0240 */
+    {
       uint16_t imm = fetchw (cpu);
       uint16_t res = get_reg (cpu, dest_reg) & imm;
       set_reg (cpu, dest_reg, res);
@@ -517,8 +536,8 @@ static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
       set_flags_word (cpu, res);
       break;
     }
-    case 0x3:
-    { /* ORI */
+    case 0x13: /* ORI — 0x0260 */
+    {
       uint16_t imm = fetchw (cpu);
       uint16_t res = get_reg (cpu, dest_reg) | imm;
       set_reg (cpu, dest_reg, res);
@@ -526,39 +545,38 @@ static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
       set_flags_word (cpu, res);
       break;
     }
-    case 0x4:
-    { /* CI */
+    case 0x14: /* CI — 0x0280 */
+    {
       uint16_t imm = fetchw (cpu);
-      uint16_t dst = get_reg (cpu, dest_reg);
-      cmp16 (cpu, dst, imm);
+      cmp16 (cpu, get_reg (cpu, dest_reg), imm);
       break;
     }
-    case 0x5: /* STWP */
-      wr16 (cpu->mem, fetchw (cpu), (uint16_t)cpu->wp);
+    case 0x15: /* STWP — 0x02A0 — store WP into dest register */
+      set_reg (cpu, dest_reg, cpu->wp);
       break;
-    case 0x6: /* STST */
-      wr16 (cpu->mem, fetchw (cpu), cpu->st);
+    case 0x16: /* STST — 0x02C0 — store ST into dest register */
+      set_reg (cpu, dest_reg, cpu->st);
       break;
-    case 0x7: /* LWPI */
-      cpu->wp = fetchw (cpu);
+    case 0x17: /* LWPI — 0x02E0 — load WP immediate (word-aligned) */
+      cpu->wp = fetchw (cpu) & 0xFFFE;
       break;
-    case 0x8: /* LIMI */
-      cpu->st = (cpu->st & 0xFF00) | (fetchw (cpu) & 0xFF);
+    case 0x18: /* LIMI — 0x0300 — load interrupt mask (skip imm word) */
+      fetchw (cpu); /* consume immediate, ignore (no interrupt mask in this core) */
       break;
-    case 0xC:   /* IDLE */
-      return 0; /* stop */
-    case 0xD:   /* RSET */
-      /* nothing to do; interrupts masked */
-      break;
-    case 0xE:
-    { /* RTWP */
-      /* Restore WP, PC, ST from workspace */
-      cpu->st = get_reg (cpu, 0);
-      cpu->pc = get_reg (cpu, 1);
-      cpu->wp = get_reg (cpu, 13); /* saved WP in R13 */
+    case 0x1A: /* IDLE — 0x0340 — stop execution */
+      return 0;
+    case 0x1C: /* RTWP — 0x0380 */
+    {
+      /* Restore ST/PC/WP from R15/R14/R13 (offsets 30/28/26) of current workspace */
+      uint16_t old_wp = cpu->wp;
+      cpu->st = rd8  (cpu->mem, (uint16_t)(old_wp + 30));
+      cpu->pc = rd16 (cpu->mem, (uint16_t)(old_wp + 28)) & 0xFFFE;
+      cpu->wp = rd16 (cpu->mem, (uint16_t)(old_wp + 26)) & 0xFFFE;
       break;
     }
-    case 0xF: /* CKON/CKOF/LREX (ignore side effects) */
+    case 0x1D: /* CKON — 0x03A0 */
+    case 0x1E: /* CKOF — 0x03C0 */
+    case 0x1F: /* LREX — 0x03E0 */
       break;
     default:
       break;
@@ -568,65 +586,58 @@ static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
 
 /* Function:  handle_jump_single
  * ----------------------------------------
- * Execute op group 1 (jumps and single-operand ops).
+ * Execute single-operand instructions (opcodes 0x0400-0x07FF).
+ * Sub-opcode is bits 10:6 of the instruction word.
  */
 static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
 {
-  uint8_t sub = (inst >> 8) & 0xF;
+  uint8_t sub = (inst >> 6) & 0x1F; /* bits 10:6 */
   switch (sub)
   {
-    case 0x0:
-    { /* BLWP */
-      uint16_t addr = inst & 0xFFFE;
-      uint16_t new_wp = rd16 (cpu->mem, addr);
-      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(addr + 2));
-      /* push old context into new workspace */
-      wr16 (cpu->mem, new_wp + 0, cpu->st);
-      wr16 (cpu->mem, new_wp + 2, cpu->pc);
-      wr16 (cpu->mem, new_wp + 4, cpu->wp);
+    case 0x10: /* BLWP */
+    {
+      Operand s = decode_operand (cpu, inst & 0x3F, 0);
+      /* For mode=0, s.val is the register value which IS the vector address.
+       * For other modes, s.addr is the effective address and s.val = mem[s.addr]. */
+      uint16_t vec = (s.mode == 0) ? s.val : s.addr;
+      vec &= 0xFFFE;
+      uint16_t new_wp = rd16 (cpu->mem, vec) & 0xFFFE;
+      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(vec + 2));
+      /* save old context into R13/R14/R15 of new workspace (offsets 26/28/30) */
+      wr16 (cpu->mem, (uint16_t)(new_wp + 26), cpu->wp);
+      wr16 (cpu->mem, (uint16_t)(new_wp + 28), cpu->pc);
+      wr8  (cpu->mem, (uint16_t)(new_wp + 30), (uint8_t)cpu->st);
       cpu->wp = new_wp;
       cpu->pc = new_pc;
       cpu->st = 0;
       break;
     }
-    case 0x1:
-    { /* B (branch) */
-      int16_t disp = (int16_t)(inst << 4);
-      disp >>= 7; /* sign-extend 9-bit word displacement */
-      cpu->pc = (uint16_t)(cpu->pc + disp);
+    case 0x11: /* B — branch to source operand address (indirect) */
+    {
+      Operand s = decode_operand (cpu, inst & 0x3F, 0);
+      cpu->pc = (s.mode == 0 ? s.val : s.addr) & 0xFFFE;
       break;
     }
-    case 0x2:
-    { /* XOP */
-      uint8_t vect = inst & 0xF;
-      uint16_t addr = (uint16_t)(vect << 2);
-      uint16_t new_wp = rd16 (cpu->mem, addr);
-      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(addr + 2));
-      wr16 (cpu->mem, new_wp + 0, cpu->st);
-      wr16 (cpu->mem, new_wp + 2, cpu->pc);
-      wr16 (cpu->mem, new_wp + 4, cpu->wp);
-      cpu->wp = new_wp;
-      cpu->pc = new_pc;
-      cpu->st = 0;
+    case 0x12: /* X — execute instruction at source */
+      /* Not commonly used in GPU code; treat as NOP */
       break;
-    }
-    case 0x3:
-    { /* CLR */
+    case 0x13: /* CLR */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       store_operand (cpu, &d, 0);
       cpu->st &= 0x1E;
       cpu->st |= TMS_ST_EQ;
       break;
     }
-    case 0x4:
-    { /* NEG */
+    case 0x14: /* NEG */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = sub16 (cpu, 0, d.val);
       store_operand (cpu, &d, res);
       break;
     }
-    case 0x5:
-    { /* INV */
+    case 0x15: /* INV */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = (uint16_t)~d.val;
       store_operand (cpu, &d, res);
@@ -634,81 +645,70 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       set_flags_word (cpu, res);
       break;
     }
-    case 0x6:
-    { /* INC */
+    case 0x16: /* INC */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = add16 (cpu, d.val, 1);
       store_operand (cpu, &d, res);
       break;
     }
-    case 0x7:
-    { /* INCT */
+    case 0x17: /* INCT */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = add16 (cpu, d.val, 2);
       store_operand (cpu, &d, res);
       break;
     }
-    case 0x8:
-    { /* DEC */
+    case 0x18: /* DEC */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = sub16 (cpu, d.val, 1);
       store_operand (cpu, &d, res);
       break;
     }
-    case 0x9:
-    { /* DECT */
+    case 0x19: /* DECT */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = sub16 (cpu, d.val, 2);
       store_operand (cpu, &d, res);
       break;
     }
-    case 0xA:
-    { /* BL */
-      uint16_t target = inst & 0x3FF;
-      set_reg (cpu, 11, cpu->pc); /* R11 = return address */
-      cpu->pc = target;
+    case 0x1A: /* BL — branch and link (indirect), save PC to R11 */
+    {
+      Operand s = decode_operand (cpu, inst & 0x3F, 0);
+      set_reg (cpu, 11, cpu->pc);
+      cpu->pc = (s.mode == 0 ? s.val : s.addr) & 0xFFFE;
       break;
     }
-    case 0xB:
-    { /* SWPB */
+    case 0x1B: /* SWPB */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t res = (uint16_t)((d.val << 8) | (d.val >> 8));
       store_operand (cpu, &d, res);
       break;
     }
-    case 0xC:
-    { /* SETO */
+    case 0x1C: /* SETO */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       store_operand (cpu, &d, 0xFFFF);
       cpu->st &= 0x1E;
       set_flags_word (cpu, 0xFFFF);
       break;
     }
-    case 0xD:
-    { /* ABS */
+    case 0x1D: /* ABS */
+    {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       int16_t sv = (int16_t)d.val;
       uint16_t res = (sv < 0) ? (uint16_t)(-sv) : (uint16_t)sv;
-      if (sv == (int16_t)0x8000)
-        cpu->st |= TMS_ST_OV; /* overflow */
-      store_operand (cpu, &d, res);
       cpu->st &= 0x16; /* keep C/OV/P */
+      if (sv == (int16_t)0x8000)
+        cpu->st |= TMS_ST_OV;
+      store_operand (cpu, &d, res);
       set_flags_word (cpu, res);
       break;
     }
-    case 0xE:
-    { /* LDCR */
-      /* CRU not emulated; treat as NOP but advance PC */
-      uint8_t count = (inst & 0xF) ? (inst & 0xF) : 16;
-      (void)count;
-      break;
-    }
-    case 0xF:
-    { /* STCR */
-      uint8_t count = (inst & 0xF) ? (inst & 0xF) : 16;
-      (void)count;
-      break;
-    }
+    case 0x1E: /* LDCR — CRU not emulated */
+    case 0x1F: /* STCR — CRU not emulated */
     default:
       break;
   }
@@ -716,16 +716,73 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
 
 /* Function:  handle_branch_group
  * ----------------------------------------
- * Execute op group 2 (conditional branches).
+ * Execute conditional/unconditional jumps (opcodes 0x1000-0x1FFF).
+ * Displacement is a signed byte in bits 7:0, in word units (×2).
  */
 static inline void handle_branch_group (Tms9900Cpu* cpu, uint16_t inst)
 {
-  int16_t disp = (int16_t)(inst << 4);
-  disp >>= 7; /* 9-bit signed */
-  uint8_t cond = (inst >> 8) & 0xF;
-  if (branch_cond (cpu->st, cond))
+  int16_t disp = (int16_t)((int8_t)(inst & 0xFF)) * 2;
+  uint8_t cond = (inst >> 8) & 0xF; /* 0x0=JMP, 0x1=JLT, ... */
+
+  switch (cond)
   {
-    cpu->pc = (uint16_t)(cpu->pc + disp);
+    case 0x0: /* JMP — unconditional */
+      cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x1: /* JLT — signed < (AGT=0 and EQ=0) */
+      if ((cpu->st & (TMS_ST_AGT | TMS_ST_EQ)) == 0)
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x2: /* JLE — unsigned ≤ (LGT=0 or EQ=1) */
+      if (!(cpu->st & TMS_ST_LGT) || (cpu->st & TMS_ST_EQ))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x3: /* JEQ */
+      if (cpu->st & TMS_ST_EQ)
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x4: /* JHE — unsigned ≥ (LGT=1 or EQ=1) */
+      if (cpu->st & (TMS_ST_LGT | TMS_ST_EQ))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x5: /* JGT — signed > (AGT=1) */
+      if (cpu->st & TMS_ST_AGT)
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x6: /* JNE */
+      if (!(cpu->st & TMS_ST_EQ))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x7: /* JNC — no carry */
+      if (!(cpu->st & TMS_ST_C))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x8: /* JOC — carry set */
+      if (cpu->st & TMS_ST_C)
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0x9: /* JNO — no overflow */
+      if (!(cpu->st & TMS_ST_OV))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0xA: /* JL — unsigned < (LGT=0 and EQ=0) */
+      if (!(cpu->st & (TMS_ST_LGT | TMS_ST_EQ)))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0xB: /* JH — unsigned > (LGT=1 and EQ=0) */
+      if ((cpu->st & TMS_ST_LGT) && !(cpu->st & TMS_ST_EQ))
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    case 0xC: /* JOP — parity */
+      if (cpu->st & TMS_ST_P)
+        cpu->pc = (uint16_t)(cpu->pc + disp);
+      break;
+    /* 0xD=SBO, 0xE=SBZ: CRU ops, NOP */
+    case 0xF: /* TB — CRU test, clears EQ */
+      cpu->st &= ~TMS_ST_EQ;
+      break;
+    default:
+      break;
   }
 }
 
@@ -743,24 +800,34 @@ static inline void handle_cru_single_bit (void)
  */
 static inline void handle_shift_rotate (Tms9900Cpu* cpu, uint16_t inst)
 {
-  uint8_t sub = (inst >> 6) & 0xF;
-  uint8_t r = (inst >> 4) & 0x3;
+  /* Sub-opcode identified by bits 11:8: 8=SRA, 9=SRL, A=SLA, B=SRC, E=SLC */
+  uint8_t sub = (inst >> 8) & 0xF;
+  /* Count field is bits 11:8 of the CCCC nibble... actually for Format 5:
+   * inst = 0000 CCCC WWWW 1sss where sss identifies the op in bits 11:9.
+   * In practice: 0x08xx=SRA, 0x09xx=SRL, 0x0Axx=SLA, 0x0Bxx=SRC, 0x0Exx=SLC.
+   * Count is the low nibble of the second byte: bits 7:4 → (inst >> 4) & 0xF. */
+  uint8_t count = (inst >> 4) & 0xF;
   uint8_t reg = inst & 0xF;
-  uint8_t count = (r == 0) ? 16 : r;
+  if (count == 0)
+  {
+    /* count=0: take low nibble of R0; if still 0, use 16 */
+    count = get_reg (cpu, 0) & 0xF;
+    if (count == 0) count = 16;
+  }
   uint16_t v = get_reg (cpu, reg);
   uint16_t res = v;
   switch (sub)
   {
-    case 0x0:
+    case 0x8:
       res = sra16 (cpu, v, count);
       break; /* SRA */
-    case 0x1:
+    case 0x9:
       res = srl16 (cpu, v, count);
       break; /* SRL */
-    case 0x2:
+    case 0xA:
       res = slx16 (cpu, v, count);
       break; /* SLA */
-    case 0x3:
+    case 0xB:
       res = src16 (cpu, v, count);
       break; /* SRC */
     case 0xE:
@@ -772,39 +839,189 @@ static inline void handle_shift_rotate (Tms9900Cpu* cpu, uint16_t inst)
   set_reg (cpu, reg, res);
 }
 
-/* Function:  handle_two_operand
- * ----------------------------------------
- * Execute op groups 5-0xB (word/byte two-operand) and 0xF subops.
- */
+/* Handle COC/CZC/XOR/MPY/DIV (opcodes 0x2000-0x3FFF) */
+static inline void handle_format9 (Tms9900Cpu* cpu, uint16_t inst)
+{
+  /* Bits 15:10 identify the instruction group (0x2000>>10=8, 0x2400>>10=9, etc.) */
+  uint8_t opcode = (uint8_t)((inst >> 10) & 0xF);
+  /* Dest register in bits 9:6, source operand in bits 5:0 */
+  uint8_t dreg = (inst >> 6) & 0xF;
+  Operand src = decode_operand (cpu, inst & 0x3F, 0);
+
+  switch (opcode)
+  {
+    case 0x8: /* 0x2000 COC — EQ if (src & dst) == src */
+    {
+      uint16_t d = get_reg (cpu, dreg);
+      if ((d & src.val) == src.val)
+        cpu->st |= TMS_ST_EQ;
+      else
+        cpu->st &= (uint16_t)~TMS_ST_EQ;
+      break;
+    }
+    case 0x9: /* 0x2400 CZC — EQ if (src & dst) == 0 */
+    {
+      uint16_t d = get_reg (cpu, dreg);
+      if ((d & src.val) == 0)
+        cpu->st |= TMS_ST_EQ;
+      else
+        cpu->st &= (uint16_t)~TMS_ST_EQ;
+      break;
+    }
+    case 0xA: /* 0x2800 XOR */
+    {
+      uint16_t res = get_reg (cpu, dreg) ^ src.val;
+      set_reg (cpu, dreg, res);
+      cpu->st &= 0x1E;
+      set_flags_word (cpu, res);
+      break;
+    }
+    /* 0xB = 0x2C00-0x2FFF: XOP/F18A PIX — not emulated in C core */
+    case 0xE: /* 0x3800 MPY */
+    {
+      uint32_t prod = (uint32_t)get_reg (cpu, dreg) * (uint32_t)src.val;
+      set_reg (cpu, dreg, (uint16_t)(prod >> 16));
+      set_reg (cpu, (uint8_t)(dreg + 1), (uint16_t)(prod & 0xFFFF));
+      break;
+    }
+    case 0xF: /* 0x3C00 DIV */
+    {
+      uint32_t dividend = ((uint32_t)get_reg (cpu, dreg) << 16) | get_reg (cpu, (uint8_t)(dreg + 1));
+      if (src.val == 0 || (dividend >> 16) >= src.val)
+      {
+        cpu->st |= TMS_ST_OV;
+        break;
+      }
+      uint16_t quo = (uint16_t)(dividend / src.val);
+      uint16_t rem = (uint16_t)(dividend % src.val);
+      set_reg (cpu, dreg, quo);
+      set_reg (cpu, (uint8_t)(dreg + 1), rem);
+      cpu->st &= (uint16_t)~TMS_ST_OV;
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/* Handle F18A stack ops: RET/CALL/PUSH/POP (opcodes 0x0C00-0x0DFF, 0x0F00-0x0FFF) */
+static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst)
+{
+  uint8_t hi = (inst >> 8) & 0xF; /* C=RET/CALL, D=PUSH, F=POP */
+  switch (hi)
+  {
+    case 0xC:
+    {
+      /* RET=0x0C00 (bits 6:0 of inst are 0), CALL=0x0C40+ (bit 6 set) */
+      if (inst & 0x40)
+      { /* CALL — push PC, branch to source operand address */
+        Operand s = decode_operand (cpu, inst & 0x3F, 0);
+        uint16_t sp = (get_reg (cpu, 15) - 2) & 0xFFFE;
+        set_reg (cpu, 15, sp);
+        wr16 (cpu->mem, sp, cpu->pc);
+        cpu->pc = s.addr & 0xFFFE;
+      }
+      else
+      { /* RET — pop PC from stack (R15) */
+        uint16_t sp = get_reg (cpu, 15) & 0xFFFE;
+        cpu->pc = rd16 (cpu->mem, sp) & 0xFFFE;
+        set_reg (cpu, 15, (uint16_t)(sp + 2));
+      }
+      break;
+    }
+    case 0xD: /* PUSH — push source value */
+    {
+      Operand s = decode_operand (cpu, inst & 0x3F, 0);
+      uint16_t sp = (get_reg (cpu, 15) - 2) & 0xFFFE;
+      set_reg (cpu, 15, sp);
+      wr16 (cpu->mem, sp, s.val);
+      break;
+    }
+    case 0xF: /* POP — pop to dest operand */
+    {
+      Operand d = decode_operand (cpu, inst & 0x3F, 0);
+      uint16_t sp = get_reg (cpu, 15) & 0xFFFE;
+      uint16_t v = rd16 (cpu->mem, sp);
+      store_operand (cpu, &d, v);
+      set_reg (cpu, 15, (uint16_t)(sp + 2));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/* Handle two-operand instructions (opcodes 0x4000-0xFFFF) */
 static inline void handle_two_operand (Tms9900Cpu* cpu, uint16_t inst)
 {
   uint8_t opcode = (uint8_t)((inst >> 12) & 0xF);
-  uint8_t byte_op = (opcode & 0x4) ? 1 : 0; /* 0x8-0xB -> byte */
-  uint8_t op_base = opcode & 0x3;           /* 0:A/S/Z/M variants per block */
-  (void)op_base;
+  uint8_t byte_op = opcode & 1; /* odd opcode = byte variant */
   Operand src = decode_operand (cpu, (uint8_t)((inst >> 6) & 0x3F), byte_op);
   Operand dst = decode_operand (cpu, (uint8_t)(inst & 0x3F), byte_op);
 
   switch (opcode)
   {
-    case 0x5: /* ADD (A) */
+    case 0x4: /* SZC — dst &= ~src (word) */
+    case 0x5: /* SZCB (byte) */
     {
-      uint16_t res = add16 (cpu, dst.val, src.val);
-      store_operand (cpu, &dst, res);
+      if (byte_op)
+      {
+        uint8_t res = (uint8_t)dst.val & (uint8_t)~src.val;
+        store_operand (cpu, &dst, res);
+        cpu->st &= 0x1E;
+        set_flags_byte (cpu, res);
+      }
+      else
+      {
+        uint16_t res = dst.val & (uint16_t)~src.val;
+        store_operand (cpu, &dst, res);
+        cpu->st &= 0x1E;
+        set_flags_word (cpu, res);
+      }
       break;
     }
-    case 0x6: /* SUB (S) */
+    case 0x6: /* S — subtract word */
     {
       uint16_t res = sub16 (cpu, dst.val, src.val);
       store_operand (cpu, &dst, res);
       break;
     }
-    case 0x7: /* COMPARE (C) */
+    case 0x7: /* SB — subtract byte */
+    {
+      uint8_t res = sub8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
+      store_operand (cpu, &dst, res);
+      break;
+    }
+    case 0x8: /* C — compare word */
     {
       cmp16 (cpu, dst.val, src.val);
       break;
     }
-    case 0x8: /* MOVB */
+    case 0x9: /* CB — compare byte */
+    {
+      cmp8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
+      break;
+    }
+    case 0xA: /* A — add word */
+    {
+      uint16_t res = add16 (cpu, dst.val, src.val);
+      store_operand (cpu, &dst, res);
+      break;
+    }
+    case 0xB: /* AB — add byte */
+    {
+      uint8_t res = add8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
+      store_operand (cpu, &dst, res);
+      break;
+    }
+    case 0xC: /* MOV — move word */
+    {
+      store_operand (cpu, &dst, src.val);
+      cpu->st &= 0x1E;
+      set_flags_word (cpu, src.val);
+      break;
+    }
+    case 0xD: /* MOVB — move byte */
     {
       uint8_t res = (uint8_t)src.val;
       store_operand (cpu, &dst, res);
@@ -812,31 +1029,7 @@ static inline void handle_two_operand (Tms9900Cpu* cpu, uint16_t inst)
       set_flags_byte (cpu, res);
       break;
     }
-    case 0x9: /* AB */
-    {
-      uint8_t res = add8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
-      store_operand (cpu, &dst, res);
-      break;
-    }
-    case 0xA: /* SB */
-    {
-      uint8_t res = sub8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
-      store_operand (cpu, &dst, res);
-      break;
-    }
-    case 0xB: /* CB */
-    {
-      cmp8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
-      break;
-    }
-    case 0xC: /* MOV */
-    {
-      store_operand (cpu, &dst, src.val);
-      cpu->st &= 0x1E;
-      set_flags_word (cpu, src.val);
-      break;
-    }
-    case 0xD: /* SOC (OR) */
+    case 0xE: /* SOC — dst |= src (word) */
     {
       uint16_t res = dst.val | src.val;
       store_operand (cpu, &dst, res);
@@ -844,67 +1037,12 @@ static inline void handle_two_operand (Tms9900Cpu* cpu, uint16_t inst)
       set_flags_word (cpu, res);
       break;
     }
-    case 0xE: /* SZC (AND ~src) */
+    case 0xF: /* SOCB — dst |= src (byte) */
     {
-      uint16_t res = dst.val & (uint16_t)~src.val;
+      uint8_t res = (uint8_t)dst.val | (uint8_t)src.val;
       store_operand (cpu, &dst, res);
       cpu->st &= 0x1E;
-      set_flags_word (cpu, res);
-      break;
-    }
-    case 0xF: /* MPY/DIV/SOCB/SZCB? -> map subset */
-    {
-      /* Treat high nibble 0xF as byte logical variants */
-      uint8_t subop = (inst >> 8) & 0xF;
-      switch (subop)
-      {
-        case 0x0:
-        { /* SOCB */
-          uint8_t res = (uint8_t)dst.val | (uint8_t)src.val;
-          store_operand (cpu, &dst, res);
-          cpu->st &= 0x1E;
-          set_flags_byte (cpu, res);
-          break;
-        }
-        case 0x1:
-        { /* SZCB */
-          uint8_t res = (uint8_t)dst.val & (uint8_t)~src.val;
-          store_operand (cpu, &dst, res);
-          cpu->st &= 0x1E;
-          set_flags_byte (cpu, res);
-          break;
-        }
-        case 0x9:
-        { /* MPY */
-          /* dst is even register; src any */
-          uint32_t prod = (uint32_t)dst.val * (uint32_t)src.val;
-          uint8_t r = (inst >> 6) & 0xF; /* dest reg field */
-          set_reg (cpu, r, (uint16_t)(prod >> 16));
-          set_reg (cpu, (uint8_t)(r + 1), (uint16_t)(prod & 0xFFFF));
-          cpu->st &= 0x1E;
-          set_flags_word (cpu, (uint16_t)prod);
-          break;
-        }
-        case 0xA:
-        { /* DIV */
-          uint8_t r = (inst >> 6) & 0xF;
-          uint32_t dividend = ((uint32_t)get_reg (cpu, r) << 16) | get_reg (cpu, (uint8_t)(r + 1));
-          if (src.val == 0)
-          {
-            cpu->st |= TMS_ST_OV;
-            break;
-          }
-          uint16_t quo = (uint16_t)(dividend / src.val);
-          uint16_t rem = (uint16_t)(dividend % src.val);
-          set_reg (cpu, r, quo);
-          set_reg (cpu, (uint8_t)(r + 1), rem);
-          cpu->st &= 0x1E;
-          set_flags_word (cpu, quo);
-          break;
-        }
-        default:
-          break;
-      }
+      set_flags_byte (cpu, res);
       break;
     }
     default:
@@ -929,40 +1067,46 @@ uint16_t run9900_c (Tms9900Cpu* cpu)
   while ((*cpu->regx38 & 1u) != 0)
   {
     uint16_t inst = fetchw (cpu);
-    uint8_t op_hi = (uint8_t)(inst >> 12);
+    uint8_t op_hi = (uint8_t)(inst >> 8); /* top byte of instruction */
 
-    switch (op_hi)
+    if (op_hi >= 0x40)
     {
-      /* Immediate / system group */
-      case 0x0:
-        if (!handle_immediate_system (cpu, inst))
-          return cpu->pc;
-        break;
-
-      /* Jumps and single-op group (opcodes 1x) */
-      case 0x1:
-        handle_jump_single (cpu, inst);
-        break;
-
-      /* Jumps (0x2 group) */
-      case 0x2:
-        handle_branch_group (cpu, inst);
-        break;
-
-      /* CRU single-bit operations (0x3 group) */
-      case 0x3:
-        handle_cru_single_bit ();
-        break;
-
-      /* Shift/rotate (0x4 group) */
-      case 0x4:
-        handle_shift_rotate (cpu, inst);
-        break;
-
-      /* Two-operand word/byte (0x5-0xB) */
-      default:
-        handle_two_operand (cpu, inst);
-        break;
+      /* 0x4000-0xFFFF: two-operand instructions */
+      handle_two_operand (cpu, inst);
+    }
+    else if (op_hi >= 0x20)
+    {
+      /* 0x2000-0x3FFF: COC/CZC/XOR/XOP/MPY/DIV */
+      handle_format9 (cpu, inst);
+    }
+    else if (op_hi >= 0x10)
+    {
+      /* 0x1000-0x1FFF: conditional jumps and JMP */
+      handle_branch_group (cpu, inst);
+    }
+    else if (op_hi >= 0x0C)
+    {
+      /* 0x0C00-0x0FFF: F18A stack ops (RET/CALL/PUSH/POP) + SLC */
+      if (op_hi == 0x0E)
+        handle_shift_rotate (cpu, inst); /* SLC at 0x0E00 */
+      else
+        handle_f18a_stack (cpu, inst);
+    }
+    else if (op_hi >= 0x08)
+    {
+      /* 0x0800-0x0BFF: SRA/SRL/SLA/SRC */
+      handle_shift_rotate (cpu, inst);
+    }
+    else if (op_hi >= 0x04)
+    {
+      /* 0x0400-0x07FF: single-operand (BLWP/B/X/CLR/NEG/INV/INC/INCT/DEC/DECT/BL/SWPB/SETO/ABS) */
+      handle_jump_single (cpu, inst);
+    }
+    else
+    {
+      /* 0x0000-0x03FF: immediate/system (LI/AI/ANDI/ORI/CI/STWP/STST/LWPI/LIMI/IDLE/RTWP) */
+      if (!handle_immediate_system (cpu, inst))
+        return cpu->pc;
     }
   }
   return cpu->pc;
