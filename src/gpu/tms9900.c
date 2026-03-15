@@ -32,6 +32,22 @@
 
 
 /*
+ * Parity table for byte operations (bit 2 = TMS_ST_P, even parity → set)
+ * Matches assembly PARITY table: value is 0x04 when byte has even number of 1-bits, else 0.
+ * (Assembly stores 4 for even parity, which is TMS_ST_P=0x04.)
+ */
+static const uint8_t parity_tbl[256] = {
+  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
+  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
+  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
+  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4
+};
+
+/*
  * Flag helpers
  */
 static inline void set_flags_word (Tms9900Cpu* cpu, uint16_t v)
@@ -59,7 +75,9 @@ static inline void set_flags_word (Tms9900Cpu* cpu, uint16_t v)
  */
 static inline void set_flags_byte (Tms9900Cpu* cpu, uint8_t v)
 {
-  cpu->st &= 0x1E;
+  /* Assembly OP_COMP_B: sets LGT/AGT/EQ + parity from PARITY table */
+  cpu->st = (uint16_t)((cpu->st & ~(TMS_ST_LGT | TMS_ST_AGT | TMS_ST_EQ | TMS_ST_P))
+                       | parity_tbl[v]);
   int8_t sv = (int8_t)v;
   if (v == 0)
   {
@@ -67,13 +85,9 @@ static inline void set_flags_byte (Tms9900Cpu* cpu, uint8_t v)
     return;
   }
   if (sv > 0)
-  {
     cpu->st |= (TMS_ST_LGT | TMS_ST_AGT);
-  }
   else
-  {
     cpu->st |= TMS_ST_LGT;
-  }
 }
 
 /*
@@ -244,7 +258,8 @@ static inline uint16_t sub16 (Tms9900Cpu* cpu, uint16_t a, uint16_t b)
   uint32_t res = (uint32_t)a - (uint32_t)b;
   uint16_t r16 = (uint16_t)res;
   cpu->st &= 0x06;
-  if (res & 0x10000)
+  /* Assembly "borrow NOT" convention: carry=1 means no borrow (src==0 or dst>=result) */
+  if (b == 0 || a >= r16)
     cpu->st |= TMS_ST_C;
   /* overflow: sign(a)!=sign(b) and sign differs from result */
   if (((a ^ b) & 0x8000) && ((a ^ r16) & 0x8000))
@@ -279,7 +294,8 @@ static inline uint8_t sub8 (Tms9900Cpu* cpu, uint8_t a, uint8_t b)
   uint16_t res = (uint16_t)a - (uint16_t)b;
   uint8_t r8 = (uint8_t)res;
   cpu->st &= 0x06;
-  if (res & 0x100)
+  /* Assembly "borrow NOT" convention: carry=1 means no borrow (src==0 or dst>=result) */
+  if (b == 0 || a >= r8)
     cpu->st |= TMS_ST_C;
   if (((a ^ b) & 0x80) && ((a ^ r8) & 0x80))
     cpu->st |= TMS_ST_OV;
@@ -291,34 +307,38 @@ static inline uint8_t sub8 (Tms9900Cpu* cpu, uint8_t a, uint8_t b)
  * ----------------------------------------
  * 8-bit subtract with flag updates matching the assembly core.
  */
-static inline void cmp16 (Tms9900Cpu* cpu, uint16_t a, uint16_t b)
+/* cmp16: compare src against dst (first operand vs second operand in TMS9900 convention).
+ * Assembly I_C: CMP R5,R2 where R5=src, R2=dst. LGT set when src > dst (unsigned).
+ * Assembly I_CI: CMP R2,R5 where R2=dst, R5=imm. LGT set when dst > imm (unsigned).
+ * Both callers must pass (first_operand, second_operand) in the correct TMS9900 order. */
+static inline void cmp16 (Tms9900Cpu* cpu, uint16_t first, uint16_t second)
 {
   /* Compare sets LGT/AGT/EQ only; C and OV are preserved */
   cpu->st &= 0x1E;
-  if (a == b)
+  if (first == second)
   {
     cpu->st |= TMS_ST_EQ;
     return;
   }
-  if (a > b) cpu->st |= TMS_ST_LGT; /* unsigned greater */
-  if ((int16_t)a > (int16_t)b) cpu->st |= TMS_ST_AGT; /* signed greater */
+  if (first > second) cpu->st |= TMS_ST_LGT; /* unsigned greater */
+  if ((int16_t)first > (int16_t)second) cpu->st |= TMS_ST_AGT; /* signed greater */
 }
 
 /* Function:  cmp16
  * ----------------------------------------
  * Compare two 16-bit values and set flags accordingly.
  */
-static inline void cmp8 (Tms9900Cpu* cpu, uint8_t a, uint8_t b)
+static inline void cmp8 (Tms9900Cpu* cpu, uint8_t src, uint8_t dst)
 {
-  /* Compare sets LGT/AGT/EQ only; C and OV are preserved */
-  cpu->st &= 0x1E;
-  if (a == b)
+  /* Assembly I_CB: preserves C/OV, sets parity of SOURCE, then sets LGT/AGT/EQ */
+  cpu->st = (uint16_t)((cpu->st & 0x1A) | parity_tbl[src]);
+  if (src == dst)
   {
     cpu->st |= TMS_ST_EQ;
     return;
   }
-  if (a > b) cpu->st |= TMS_ST_LGT;
-  if ((int8_t)a > (int8_t)b) cpu->st |= TMS_ST_AGT;
+  if (src > dst) cpu->st |= TMS_ST_LGT;
+  if ((int8_t)src > (int8_t)dst) cpu->st |= TMS_ST_AGT;
 }
 
 /* Function:  cmp8
@@ -355,7 +375,8 @@ static inline uint16_t slx16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
  */
 static inline uint16_t sra16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
 {
-  cpu->st &= 0x06;
+  /* Assembly: MOVS R4,#0x0E; ANDS R1,R4 — keeps OV/P/bit1, clears C (and LGT/AGT/EQ) */
+  cpu->st &= 0x0E;
   if (count == 0)
     count = 16;
   uint32_t vv = (uint32_t)(int32_t)(int16_t)v;
@@ -378,7 +399,8 @@ static inline uint16_t sra16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
  */
 static inline uint16_t srl16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
 {
-  cpu->st &= 0x06;
+  /* Assembly: MOVS R4,#0x0E; ANDS R1,R4 — keeps OV/P/bit1, clears C */
+  cpu->st &= 0x0E;
   if (count == 0)
     count = 16;
   uint32_t vv = v;
@@ -401,13 +423,15 @@ static inline uint16_t srl16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
  */
 static inline uint16_t src16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
 {
-  cpu->st &= 0x06;
+  /* Assembly: MOVS R4,#0x0E; ANDS R1,R4 — keeps OV/P/bit1, clears C */
+  cpu->st &= 0x0E;
   if (count == 0)
     count = 16;
-  uint32_t vv = ((uint32_t)v << 16) | v;
-  vv = (vv >> count);
-  uint16_t carry = (uint16_t)(vv & 1u);
-  uint16_t r = (uint16_t)(vv >> 16);
+  /* Assembly: ORRS R0 = (v<<16)|v, then RORS by count. Lower 16 bits = v rotated right.
+   * Carry = bit(count-1) of v (last bit shifted out). Use 32-bit to avoid shift-by-16 UB. */
+  uint32_t vv = v;
+  uint16_t r = (uint16_t)((vv >> count) | (vv << (16u - count)));
+  uint16_t carry = (uint16_t)((vv >> (count - 1u)) & 1u);
   if (carry)
     cpu->st |= TMS_ST_C;
   set_flags_word (cpu, r);
@@ -420,7 +444,8 @@ static inline uint16_t src16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
  */
 static inline uint16_t slc16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
 {
-  cpu->st &= 0x06;
+  /* Assembly: MOVS R4,#0x0E; ANDS R1,R4 — keeps OV/P/bit1, clears C */
+  cpu->st &= 0x0E;
   if (count == 0)
     count = 16;
   count &= 0x1F;
@@ -632,8 +657,23 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
     case 0x14: /* NEG */
     {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
-      uint16_t res = sub16 (cpu, 0, d.val);
-      store_operand (cpu, &d, res);
+      /* Assembly: MOVS R4,#0x06; ANDS R1,R4 (clear C and OV).
+       * If input==0x8000: OV set, no store, flags on 0x8000 (LGT only).
+       * Otherwise: negate, carry if result==0, store, set flags. */
+      cpu->st &= 0x06;
+      if (d.val == 0x8000u)
+      {
+        cpu->st |= TMS_ST_OV;
+        set_flags_word (cpu, d.val);  /* flags on 0x8000 = LGT only */
+      }
+      else
+      {
+        uint16_t res = (uint16_t)(0u - d.val);
+        if (res == 0)
+          cpu->st |= TMS_ST_C;
+        store_operand (cpu, &d, res);
+        set_flags_word (cpu, res);
+      }
       break;
     }
     case 0x15: /* INV */
@@ -699,12 +739,25 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
     {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       int16_t sv = (int16_t)d.val;
-      uint16_t res = (sv < 0) ? (uint16_t)(-sv) : (uint16_t)sv;
-      cpu->st &= 0x16; /* keep C/OV/P */
-      if (sv == (int16_t)0x8000)
+      /* Assembly: ST &= 0x06 (clears C and OV, keeps only P/bit1) */
+      cpu->st &= 0x06;
+      if (d.val == 0x8000u)
+      {
+        /* Overflow case: can't negate 0x8000; set OV, leave value unchanged */
         cpu->st |= TMS_ST_OV;
-      store_operand (cpu, &d, res);
-      set_flags_word (cpu, res);
+        set_flags_word (cpu, d.val);
+      }
+      else if (sv < 0)
+      {
+        uint16_t res = (uint16_t)(0u - d.val);
+        store_operand (cpu, &d, res);
+        set_flags_word (cpu, res);
+      }
+      else
+      {
+        /* Positive/zero: flags only, no store */
+        set_flags_word (cpu, d.val);
+      }
       break;
     }
     case 0x1E: /* LDCR — CRU not emulated */
@@ -992,14 +1045,14 @@ static inline void handle_two_operand (Tms9900Cpu* cpu, uint16_t inst)
       store_operand (cpu, &dst, res);
       break;
     }
-    case 0x8: /* C — compare word */
+    case 0x8: /* C — compare word: assembly CMP src,dst → LGT when src > dst */
     {
-      cmp16 (cpu, dst.val, src.val);
+      cmp16 (cpu, src.val, dst.val);
       break;
     }
-    case 0x9: /* CB — compare byte */
+    case 0x9: /* CB — compare byte: assembly CMP src,dst → LGT when src > dst */
     {
-      cmp8 (cpu, (uint8_t)dst.val, (uint8_t)src.val);
+      cmp8 (cpu, (uint8_t)src.val, (uint8_t)dst.val);
       break;
     }
     case 0xA: /* A — add word */
