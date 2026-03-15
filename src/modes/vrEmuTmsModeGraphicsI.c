@@ -552,26 +552,11 @@ static inline void __time_critical_func(vrEmuF18ATileScanLine)(VR_EMU_INST_ARG c
  * ----------------------------------------
  * generate a Graphics I mode scanline for the T1 layer
  */
-static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ONLY_ARG)
 {
-  bool swapYPage = false;
-
-  /* vertical scroll */
-  if (TMS_REGISTER(tms9918, 0x1c))
-  {
-    int virtY = y;
-    virtY += TMS_REGISTER(tms9918, 0x1c);
-
-    int maxY = (TMS_REGISTER(tms9918, 0x31) & 0x40) ? (8 * 30) : (8 * 24);
-
-    if (virtY >= maxY)
-    {
-      virtY -= maxY;
-      swapYPage = (bool)(TMS_REGISTER(tms9918, 0x1d) & 0x01);
-    }
-
-    y = virtY;
-  }
+  const uint16_t y = tms9918->scanCtx.y1;
+  const bool swapYPage = tms9918->scanCtx.swapY1Page;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
 
   const uint8_t tileY = y >> 3;   /* which name table row (0 - 23)... or 29 */
 
@@ -603,26 +588,11 @@ static void __time_critical_func(vrEmuF18ATile1ScanLine)(VR_EMU_INST_ARG uint16_
  * ----------------------------------------
  * generate a Graphics I mode scanline for the T2 layer
  */
-static void __time_critical_func(vrEmuF18ATile2ScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static void __time_critical_func(vrEmuF18ATile2ScanLine)(VR_EMU_INST_ONLY_ARG)
 {
-  bool swapYPage = false;
-
-  /* vertical scroll */
-  if (TMS_REGISTER(tms9918, 0x1a))
-  {
-    int virtY = y;
-    virtY += TMS_REGISTER(tms9918, 0x1a);
-
-    int maxY = (TMS_REGISTER(tms9918, 0x31) & 0x40) ? (8 * 30) : (8 * 24);
-
-    if (virtY >= maxY)
-    {
-      virtY -= maxY;
-      swapYPage = (bool)(TMS_REGISTER(tms9918, 0x1d) & 0x10);
-    }
-
-    y = virtY;
-  }
+  const uint16_t y = tms9918->scanCtx.y2;
+  const bool swapYPage = tms9918->scanCtx.swapY2Page;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
 
   const uint8_t tileY = y >> 3;   /* which name table row (0 - 23)... or 29 */
 
@@ -767,8 +737,11 @@ static inline bool __time_critical_func(renderBitmapLayer)(VR_EMU_INST_ARG uint1
  * ----------------------------------------
  * generate an F18A bitmap layer scanline
  */
-static bool __time_critical_func(vrEmuTms9918BitmapLayerScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static bool __time_critical_func(vrEmuTms9918BitmapLayerScanLine)(VR_EMU_INST_ONLY_ARG)
 {
+  uint16_t y = tms9918->scanCtx.y;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
+
   /* bml enabled? */
   const uint8_t bmlCtl = TMS_REGISTER(tms9918, 0x1f);
   if (!(bmlCtl & 0x80))
@@ -801,8 +774,11 @@ static bool __time_critical_func(vrEmuTms9918BitmapLayerScanLine)(VR_EMU_INST_AR
  * ----------------------------------------
  * generate a Graphics I mode scanline (pure tile renderer — overlays handled by pipeline stages)
  */
-static uint8_t __time_critical_func(vrEmuTms9918GraphicsIScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(vrEmuTms9918GraphicsIScanLine)(VR_EMU_INST_ONLY_ARG)
 {
+  const uint16_t y = tms9918->scanCtx.y;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
+
   const uint8_t tileY = y >> 3;   /* which name table row (0 - 23)... or 29 */
 
   /* address in name table at the start of this row */

@@ -15,8 +15,11 @@
  * ----------------------------------------
  * generate a Graphics II mode scanline (pure tile renderer — overlays handled by pipeline stages)
  */
-static __attribute__((noinline)) uint8_t __time_critical_func(vrEmuTms9918GraphicsIIScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static __attribute__((noinline)) uint8_t __time_critical_func(vrEmuTms9918GraphicsIIScanLine)(VR_EMU_INST_ONLY_ARG)
 {
+  const uint16_t y = tms9918->scanCtx.y;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
+
   const uint8_t tileY = y >> 3;   /* which name table row (0 - 23) */
   const uint8_t pattRow = y & 0x07;  /* which pattern row (0 - 7) */
 

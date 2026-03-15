@@ -172,6 +172,15 @@ struct vrEmuTMS9918_s
 
   bool scanlineHasSprites;
 
+  struct {
+    uint16_t  y;           /* raw scanline */
+    uint16_t  y1;          /* T1 layer Y after scroll (= y when locked or scroll=0) */
+    uint16_t  y2;          /* T2 layer Y after scroll (= y when T2 disabled or locked) */
+    bool      swapY1Page;  /* T1 name-table page swap flag */
+    bool      swapY2Page;  /* T2 name-table page swap flag */
+    uint8_t*  pixels;      /* pointer to caller-owned output pixel buffer */
+  } scanCtx;
+
   /* runtime base VDP selection (independent of F18A unlock) */
   uint8_t vdpBase;  /* VR_EMU_TMS9918_BASE_TMS9918 or VR_EMU_TMS9918_BASE_V9938 */
 };
@@ -364,4 +373,4 @@ inline void vrEmuTms9918SetStatusImpl(VR_EMU_INST_ARG uint8_t status)
 }
 
 /* Internal sprite renderer — non-static so vrEmuTmsV9938.c can call it */
-uint8_t vrEmuTms9918OutputSprites(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X]);
+uint8_t vrEmuTms9918OutputSprites(VR_EMU_INST_ONLY_ARG);

@@ -15,8 +15,11 @@
  * ----------------------------------------
  * generate a Text mode scanline (pure tile renderer — overlays handled by pipeline stages)
  */
-static uint8_t __time_critical_func(vrEmuTms9918TextScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(vrEmuTms9918TextScanLine)(VR_EMU_INST_ONLY_ARG)
 {
+  const uint16_t y = tms9918->scanCtx.y;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
+
   const uint8_t tileY = y >> 3;   /* which name table row (0 - 23) */
   const uint8_t pattRow = y & 0x07;  /* which pattern row (0 - 7) */
 
@@ -177,23 +180,10 @@ static void renderText80Layer(
  * ----------------------------------------
  * generate an 80-column text mode scanline (pure tile renderer — overlays handled by pipeline stages)
  */
-static uint8_t __time_critical_func(vrEmuTms9918Text80ScanLine)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(vrEmuTms9918Text80ScanLine)(VR_EMU_INST_ONLY_ARG)
 {
-  int originalY = y;
-  if (TMS_REGISTER(tms9918, 0x1c))
-  {
-    int virtY = y;
-    virtY += TMS_REGISTER(tms9918, 0x1c);
-
-    int maxY = (TMS_REGISTER(tms9918, 0x31) & 0x40) ? (8 * 30) : (8 * 24);
-
-    if (virtY >= maxY)
-    {
-      virtY -= maxY;
-    }
-
-    y = virtY;
-  }
+  uint8_t* pixels = tms9918->scanCtx.pixels;
+  uint16_t y = tms9918->scanCtx.y1;
 
   uint8_t tileY = y >> 3;   /* which name table row (0 - 23... or 29) */
   uint8_t pattRow = y & 0x07;  /* which pattern row (0 - 7) */
@@ -220,34 +210,17 @@ static uint8_t __time_critical_func(vrEmuTms9918Text80ScanLine)(VR_EMU_INST_ARG 
 
     if (TMS_REGISTER(tms9918, 0x31) & 0x80)
     {
-      y = originalY;
-      if (TMS_REGISTER(tms9918, 0x1a))
-      {
-        int virtY = y;
-        virtY += TMS_REGISTER(tms9918, 0x1a);
+      uint16_t y2 = tms9918->scanCtx.y2;
 
-        int maxY = (TMS_REGISTER(tms9918, 0x31) & 0x40) ? (8 * 30) : (8 * 24);
-
-        if (virtY >= maxY)
-        {
-          virtY -= maxY;
-        }
-
-        y = virtY;
-      }
-
-      uint8_t tileY = y >> 3;   /* which name table row (0 - 23... or 29) */
-      uint8_t pattRow = y & 0x07;  /* which pattern row (0 - 7) */
-
-      const uint8_t startPattBit = TMS_REGISTER(tms9918, 0x1b) & 0x07;
-      const uint8_t tileIndex = (TMS_REGISTER(tms9918, 0x1b) >> 3);
+      uint8_t tileY = y2 >> 3;   /* which name table row (0 - 23... or 29) */
+      uint8_t pattRow = y2 & 0x07;  /* which pattern row (0 - 7) */
 
       uint8_t* patternTable = tms9918->vram.bytes + tmsPatternTableAddr(tms9918) + pattRow;
 
       rowNamesAddr = (tmsNameTable2Addr(tms9918) & (nameTableMask << 10)) + tileY * TEXT80_NUM_COLS;
       colorTableAddr = (tmsColorTable2Addr(tms9918) ) + tileY * TEXT80_NUM_COLS;
 
-      renderText80Layer(y, tileY, tms9918->vram.bytes + rowNamesAddr, patternTable, tms9918->vram.bytes + colorTableAddr, false, pixels);
+      renderText80Layer(y2, tileY, tms9918->vram.bytes + rowNamesAddr, patternTable, tms9918->vram.bytes + colorTableAddr, false, pixels);
     }
   }
   else  // just plain old two-tone

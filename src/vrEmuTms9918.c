@@ -606,6 +606,29 @@ static inline void loadSpriteData(uint32_t *spriteBits, uint32_t pattOffset, uin
 }
 
 
+/* Function:  tmsApplyYScroll
+ * ----------------------------------------
+ * Apply vertical scroll register to a raw scanline Y coordinate.
+ * Returns the scrolled Y; sets *swapPage when the scroll wraps past maxY
+ * and the corresponding page-swap bit is set.
+ */
+static inline uint16_t tmsApplyYScroll(VR_EMU_INST_ARG uint16_t y, uint8_t scrollReg, uint8_t pageSwapMask, bool* swapPage)
+{
+  uint8_t scroll = TMS_REGISTER(tms9918, scrollReg);
+  if (scroll)
+  {
+    int virtY = y + scroll;
+    int maxY = (TMS_REGISTER(tms9918, 0x31) & 0x40) ? (8 * 30) : (8 * 24);
+    if (virtY >= maxY)
+    {
+      virtY -= maxY;
+      if (swapPage) *swapPage = (bool)(TMS_REGISTER(tms9918, 0x1d) & pageSwapMask);
+    }
+    return (uint16_t)virtY;
+  }
+  return y;
+}
+
 /* Function:  vrEmuTms9918OutputSprites
  * ----------------------------------------
  * Output Sprites to a scanline
@@ -985,9 +1008,11 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
   return tempStatus;
 }
 
-uint8_t __time_critical_func(vrEmuTms9918OutputSprites)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+uint8_t __time_critical_func(vrEmuTms9918OutputSprites)(VR_EMU_INST_ONLY_ARG)
 {
   const bool spriteMag = tmsSpriteMag(tms9918);
+  uint16_t y = tms9918->scanCtx.y;
+  uint8_t* pixels = tms9918->scanCtx.pixels;
 
   if (TMS_REGISTER(tms9918, 0) & R0_DOUBLE_ROWS)  // double rows (high-res)? still only have low-res sprites
     y >>= 1;
@@ -1035,21 +1060,21 @@ uint8_t __time_critical_func(vrEmuTms9918OutputSprites)(VR_EMU_INST_ARG uint16_t
  * share the same function pointer.
  * ------------------------------------------------------------------------- */
 
-static uint8_t __time_critical_func(stageSpritesAbove)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(stageSpritesAbove)(VR_EMU_INST_ONLY_ARG)
 {
-  return vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+  return vrEmuTms9918OutputSprites(VR_EMU_INST_ONLY);
 }
 
-static uint8_t __time_critical_func(stageSpritesBelow)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(stageSpritesBelow)(VR_EMU_INST_ONLY_ARG)
 {
-  return vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+  return vrEmuTms9918OutputSprites(VR_EMU_INST_ONLY);
 }
 
 /* Graphics-II F18A stage4: sprites then bitmap (preserves current exact order) */
-static uint8_t __time_critical_func(stageGfxIIF18ASpritesAndBitmap)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(stageGfxIIF18ASpritesAndBitmap)(VR_EMU_INST_ONLY_ARG)
 {
-  uint8_t st = vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
-  vrEmuTms9918BitmapLayerScanLine(VR_EMU_INST y, pixels);
+  uint8_t st = vrEmuTms9918OutputSprites(VR_EMU_INST_ONLY);
+  vrEmuTms9918BitmapLayerScanLine(VR_EMU_INST_ONLY);
   return st;
 }
 
@@ -1058,19 +1083,19 @@ static uint8_t __time_critical_func(stageGfxIIF18ASpritesAndBitmap)(VR_EMU_INST_
 static bool gfxIWriteMask = true;
 
 /* Graphics-I F18A stage0: bitmap layer — captures writeMask for stage2 */
-static uint8_t __time_critical_func(stageGfxIBitmapF18A)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(stageGfxIBitmapF18A)(VR_EMU_INST_ONLY_ARG)
 {
-  gfxIWriteMask = vrEmuTms9918BitmapLayerScanLine(VR_EMU_INST y, pixels);
+  gfxIWriteMask = vrEmuTms9918BitmapLayerScanLine(VR_EMU_INST_ONLY);
   return 0;
 }
 
 /* Graphics-I F18A stage2: draws tile2 and tile1 only when writeMask was set */
-static uint8_t __time_critical_func(stageGfxITilesF18A)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(stageGfxITilesF18A)(VR_EMU_INST_ONLY_ARG)
 {
   if (gfxIWriteMask)
   {
-    if (TMS_REGISTER(tms9918, 0x31) & 0x80) vrEmuF18ATile2ScanLine(y, pixels);
-    if (!(TMS_REGISTER(tms9918, 0x32) & 0x10)) vrEmuF18ATile1ScanLine(y, pixels);
+    if (TMS_REGISTER(tms9918, 0x31) & 0x80) vrEmuF18ATile2ScanLine(VR_EMU_INST_ONLY);
+    if (!(TMS_REGISTER(tms9918, 0x32) & 0x10)) vrEmuF18ATile1ScanLine(VR_EMU_INST_ONLY);
   }
   return 0;
 }
@@ -1185,12 +1210,26 @@ VR_EMU_TMS9918_DLLEXPORT uint8_t __time_critical_func(vrEmuTms9918ScanLine)(VR_E
     }
     tms9918->scanlineHasSprites = false;
 
+    /* populate scanCtx before pipeline */
+    tms9918->scanCtx.pixels     = pixels;
+    tms9918->scanCtx.y          = y;
+    tms9918->scanCtx.y1         = y;
+    tms9918->scanCtx.y2         = y;
+    tms9918->scanCtx.swapY1Page = false;
+    tms9918->scanCtx.swapY2Page = false;
+    if (tms9918->isUnlocked)
+    {
+      tms9918->scanCtx.y1 = tmsApplyYScroll(VR_EMU_INST y, 0x1c, 0x01, &tms9918->scanCtx.swapY1Page);
+      if (TMS_REGISTER(tms9918, 0x31) & 0x80)  /* T2 enabled */
+        tms9918->scanCtx.y2 = tmsApplyYScroll(VR_EMU_INST y, 0x1a, 0x10, &tms9918->scanCtx.swapY2Page);
+    }
+
     const VrEmuTmsDisplayModeOps* ops = vrTmsActiveModeOps;
-    if (ops->stage0Fn) ops->stage0Fn(VR_EMU_INST y, pixels);
-    if (ops->stage1Fn) tempStatus |= ops->stage1Fn(VR_EMU_INST y, pixels);
-                       ops->stage2Fn(VR_EMU_INST y, pixels);   /* never NULL */
-    if (ops->stage3Fn) ops->stage3Fn(VR_EMU_INST y, pixels);
-    if (ops->stage4Fn) tempStatus |= ops->stage4Fn(VR_EMU_INST y, pixels);
+    if (ops->stage0Fn) ops->stage0Fn(VR_EMU_INST_ONLY);
+    if (ops->stage1Fn) tempStatus |= ops->stage1Fn(VR_EMU_INST_ONLY);
+                       ops->stage2Fn(VR_EMU_INST_ONLY);   /* never NULL */
+    if (ops->stage3Fn) ops->stage3Fn(VR_EMU_INST_ONLY);
+    if (ops->stage4Fn) tempStatus |= ops->stage4Fn(VR_EMU_INST_ONLY);
   }
 
   return tempStatus;

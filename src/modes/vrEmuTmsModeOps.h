@@ -17,7 +17,7 @@
  * Per-mode scanline function signature.
  * Returns a status byte (sprite overflow/collision flags) or 0.
  */
-typedef uint8_t (*vrEmuTmsScanLineFn)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X]);
+typedef uint8_t (*vrEmuTmsScanLineFn)(VR_EMU_INST_ONLY_ARG);
 
 /*
  * Display mode operations vtable — five named pipeline stages.

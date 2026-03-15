@@ -23,10 +23,8 @@
 /* ------------------------------------------------------------------
  * Shared blank stage2 renderer — background already filled; nothing to do.
  * ------------------------------------------------------------------ */
-static uint8_t __time_critical_func(v9938BlankTiles)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(v9938BlankTiles)(VR_EMU_INST_ONLY_ARG)
 {
-  (void)y;
-  (void)pixels;
   VR_TMS_FILL32_WAIT();
   return 0;
 }
@@ -34,9 +32,9 @@ static uint8_t __time_critical_func(v9938BlankTiles)(VR_EMU_INST_ARG uint16_t y,
 /* ------------------------------------------------------------------
  * Shared stage4 sprites trampoline for V9938 modes.
  * ------------------------------------------------------------------ */
-static uint8_t __time_critical_func(v9938SpritesAbove)(VR_EMU_INST_ARG uint16_t y, uint8_t pixels[TMS9918_PIXELS_X])
+static uint8_t __time_critical_func(v9938SpritesAbove)(VR_EMU_INST_ONLY_ARG)
 {
-  return vrEmuTms9918OutputSprites(VR_EMU_INST y, pixels);
+  return vrEmuTms9918OutputSprites(VR_EMU_INST_ONLY);
 }
 
 /* ------------------------------------------------------------------
