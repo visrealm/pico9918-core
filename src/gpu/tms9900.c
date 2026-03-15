@@ -32,19 +32,19 @@
 
 
 /*
- * Parity table for byte operations (bit 2 = TMS_ST_P, even parity → set)
- * Matches assembly PARITY table: value is 0x04 when byte has even number of 1-bits, else 0.
- * (Assembly stores 4 for even parity, which is TMS_ST_P=0x04.)
+ * Parity table for byte operations (bit 2 = TMS_ST_P, ODD parity → set).
+ * Matches assembly PARITY table exactly (thumb9900_m0.S line 714):
+ * P=4 (TMS_ST_P) when the byte has an ODD number of 1-bits, else 0.
  */
 static const uint8_t parity_tbl[256] = {
-  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
-  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
-  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
-  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
   0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
   4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
   4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
-  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
+  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0,
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
+  0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0, 4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4,
+  4,0,0,4,0,4,4,0,0,4,4,0,4,0,0,4, 0,4,4,0,4,0,0,4,4,0,0,4,0,4,4,0
 };
 
 /*
@@ -182,28 +182,41 @@ static Operand decode_operand (Tms9900Cpu* cpu, uint8_t field, uint8_t is_byte)
   switch (o.mode)
   {
     case 0: /* register direct */
-      o.val = get_reg (cpu, o.reg);
+      /* For byte ops, TMS9900 accesses the HIGH byte of the register word.
+       * WP+reg*2 is the high byte in big-endian memory (assembly: LDRB/STRB at [WP+reg*2]).
+       * For word ops, read the full 16-bit word. */
+      if (is_byte)
+        o.addr = (uint16_t)(cpu->wp + ((uint16_t)o.reg << 1)); /* high byte address */
+      o.val = is_byte ? rd8 (cpu->mem, (uint16_t)(cpu->wp + ((uint16_t)o.reg << 1)))
+                      : get_reg (cpu, o.reg);
       break;
-    case 1: /* indirect */
+    case 1: /* indirect — assembly word-aligns effective address for word ops */
       o.addr = get_reg (cpu, o.reg);
+      if (!is_byte) o.addr &= 0xFFFE;
       o.val = is_byte ? rd8 (cpu->mem, o.addr) : rd16 (cpu->mem, o.addr);
       break;
     case 2:
     { /* indexed — when reg==0, address is the immediate offset only (absolute) */
       uint16_t offset = fetchw (cpu);
+      uint16_t ea;
       if (o.reg == 0)
-        o.addr = offset; /* @address — no register added (assembly: CMP R5,#0; BEQ skip_add) */
+        ea = offset; /* @address — no register added (assembly: CMP R5,#0; BEQ skip_add) */
       else
-        o.addr = (uint16_t)(get_reg (cpu, o.reg) + offset);
+        ea = (uint16_t)(get_reg (cpu, o.reg) + offset);
+      /* Assembly word-aligns effective address for word ops (LSRS/LSLS #1);
+       * byte ops use unaligned address. */
+      o.addr = is_byte ? ea : (ea & 0xFFFE);
       o.val = is_byte ? rd8 (cpu->mem, o.addr) : rd16 (cpu->mem, o.addr);
       break;
     }
     case 3:
-    { /* auto-increment (indirect) */
-      o.addr = get_reg (cpu, o.reg);
-      o.val = is_byte ? rd8 (cpu->mem, o.addr) : rd16 (cpu->mem, o.addr);
+    { /* auto-increment: effective address = old register value (word-aligned for word ops),
+       * register is updated to old+inc (assembly does this before returning the address) */
+      uint16_t raw = get_reg (cpu, o.reg);
       uint16_t inc = is_byte ? 1u : 2u;
-      set_reg (cpu, o.reg, (uint16_t)(o.addr + inc));
+      set_reg (cpu, o.reg, (uint16_t)(raw + inc));
+      o.addr = is_byte ? raw : (raw & 0xFFFE);
+      o.val = is_byte ? rd8 (cpu->mem, o.addr) : rd16 (cpu->mem, o.addr);
       break;
     }
   }
@@ -218,11 +231,16 @@ static void store_operand (Tms9900Cpu* cpu, const Operand* o, uint16_t v)
 {
   if (o->mode == 0)
   {
-    set_reg (cpu, o->reg, v);
-    /* Function:  store_operand
-     * ----------------------------------------
-     * Write a computed value back to a register or memory operand.
-     */
+    if (o->is_byte)
+    {
+      /* Byte register write: assembly does STRB at WP+reg*2 (high byte of the word).
+       * Only the high byte is updated; low byte is unchanged. */
+      wr8 (cpu->mem, (uint16_t)(cpu->wp + ((uint16_t)o->reg << 1)), (uint8_t)v);
+    }
+    else
+    {
+      set_reg (cpu, o->reg, v);
+    }
   }
   else
   {
@@ -631,11 +649,14 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       uint16_t vec = (s.mode == 0) ? s.val : s.addr;
       vec &= 0xFFFE;
       uint16_t new_wp = rd16 (cpu->mem, vec) & 0xFFFE;
-      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(vec + 2));
+      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(vec + 2)) & 0xFFFE;
       /* save old context into R13/R14/R15 of new workspace (offsets 26/28/30) */
+      /* Assembly: STRH R2,[R0,#26]; STRH R3,[R0,#28]; STRH R1,[R0,#30]
+       * R1=ST (byte in low byte of reg), STRH without REV16 puts ST in high byte of TMS word.
+       * Using wr16 with st<<8 is equivalent; low byte of the stored word is 0. */
       wr16 (cpu->mem, (uint16_t)(new_wp + 26), cpu->wp);
       wr16 (cpu->mem, (uint16_t)(new_wp + 28), cpu->pc);
-      wr8  (cpu->mem, (uint16_t)(new_wp + 30), (uint8_t)cpu->st);
+      wr16 (cpu->mem, (uint16_t)(new_wp + 30), (uint16_t)cpu->st << 8); /* ST→high byte, low byte=0 */
       cpu->wp = new_wp;
       cpu->pc = new_pc;
       cpu->st = 0;
