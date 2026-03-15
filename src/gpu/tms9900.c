@@ -189,9 +189,12 @@ static Operand decode_operand (Tms9900Cpu* cpu, uint8_t field, uint8_t is_byte)
       o.val = is_byte ? rd8 (cpu->mem, o.addr) : rd16 (cpu->mem, o.addr);
       break;
     case 2:
-    { /* indexed */
+    { /* indexed — when reg==0, address is the immediate offset only (absolute) */
       uint16_t offset = fetchw (cpu);
-      o.addr = (uint16_t)(get_reg (cpu, o.reg) + offset);
+      if (o.reg == 0)
+        o.addr = offset; /* @address — no register added (assembly: CMP R5,#0; BEQ skip_add) */
+      else
+        o.addr = (uint16_t)(get_reg (cpu, o.reg) + offset);
       o.val = is_byte ? rd8 (cpu->mem, o.addr) : rd16 (cpu->mem, o.addr);
       break;
     }
@@ -579,8 +582,9 @@ static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
     case 0x15: /* STWP — 0x02A0 — store WP into dest register */
       set_reg (cpu, dest_reg, cpu->wp);
       break;
-    case 0x16: /* STST — 0x02C0 — store ST into dest register */
-      set_reg (cpu, dest_reg, cpu->st);
+    case 0x16: /* STST — 0x02C0 — store ST into dest register (high byte of word) */
+      /* Assembly: STRH R1,[R6,#0] where R1=ST in low byte stored as high byte of TMS word */
+      set_reg (cpu, dest_reg, (uint16_t)cpu->st << 8);
       break;
     case 0x17: /* LWPI — 0x02E0 — load WP immediate (word-aligned) */
       cpu->wp = fetchw (cpu) & 0xFFFE;
@@ -646,12 +650,10 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
     case 0x12: /* X — execute instruction at source */
       /* Not commonly used in GPU code; treat as NOP */
       break;
-    case 0x13: /* CLR */
+    case 0x13: /* CLR — no flag update (assembly does not touch ST) */
     {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       store_operand (cpu, &d, 0);
-      cpu->st &= 0x1E;
-      cpu->st |= TMS_ST_EQ;
       break;
     }
     case 0x14: /* NEG */
@@ -727,12 +729,10 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       store_operand (cpu, &d, res);
       break;
     }
-    case 0x1C: /* SETO */
+    case 0x1C: /* SETO — no flag update (assembly does not touch ST) */
     {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
       store_operand (cpu, &d, 0xFFFF);
-      cpu->st &= 0x1E;
-      set_flags_word (cpu, 0xFFFF);
       break;
     }
     case 0x1D: /* ABS */
@@ -771,8 +771,9 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
  * ----------------------------------------
  * Execute conditional/unconditional jumps (opcodes 0x1000-0x1FFF).
  * Displacement is a signed byte in bits 7:0, in word units (×2).
+ * Returns 0 if JMP self-loop detected (signals stop like IDLE), else 1.
  */
-static inline void handle_branch_group (Tms9900Cpu* cpu, uint16_t inst)
+static inline int handle_branch_group (Tms9900Cpu* cpu, uint16_t inst)
 {
   int16_t disp = (int16_t)((int8_t)(inst & 0xFF)) * 2;
   uint8_t cond = (inst >> 8) & 0xF; /* 0x0=JMP, 0x1=JLT, ... */
@@ -780,6 +781,8 @@ static inline void handle_branch_group (Tms9900Cpu* cpu, uint16_t inst)
   switch (cond)
   {
     case 0x0: /* JMP — unconditional */
+      /* Assembly: self-jump (disp==-2, i.e. JMP $) treated as IDLE — exit emulation */
+      if (disp == -2) { cpu->pc = (uint16_t)(cpu->pc - 2); return 0; }
       cpu->pc = (uint16_t)(cpu->pc + disp);
       break;
     case 0x1: /* JLT — signed < (AGT=0 and EQ=0) */
@@ -837,6 +840,7 @@ static inline void handle_branch_group (Tms9900Cpu* cpu, uint16_t inst)
     default:
       break;
   }
+  return 1;
 }
 
 /* Function:  handle_cru_single_bit
@@ -967,36 +971,43 @@ static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst)
     {
       /* RET=0x0C00 (bits 6:0 of inst are 0), CALL=0x0C40+ (bit 6 set) */
       if (inst & 0x40)
-      { /* CALL — push PC, branch to source operand address */
+      { /* CALL — push PC at OLD R15, pre-decrement R15 by 2, branch to source */
+        /* Assembly: SUBS R2,R4,#2; STRH R2,[R0,#30]; ADD R4,R8; STRH R5,[R4,#0]
+         * R4=old_sp, R2=new_sp; writes to R4 (old sp), not R2 (new sp) */
         Operand s = decode_operand (cpu, inst & 0x3F, 0);
-        uint16_t sp = (get_reg (cpu, 15) - 2) & 0xFFFE;
-        set_reg (cpu, 15, sp);
-        wr16 (cpu->mem, sp, cpu->pc);
-        cpu->pc = s.addr & 0xFFFE;
+        uint16_t old_sp = get_reg (cpu, 15) & 0xFFFE;
+        uint16_t new_sp = (uint16_t)(old_sp - 2);
+        set_reg (cpu, 15, new_sp);
+        wr16 (cpu->mem, old_sp, cpu->pc); /* write at OLD sp, not new sp */
+        cpu->pc = (s.mode == 0 ? s.val : s.addr) & 0xFFFE;
       }
       else
-      { /* RET — pop PC from stack (R15) */
+      { /* RET — read PC from R15+2 (OLD R15), then post-increment R15 by 2 */
+        /* Assembly: ADD R4,R8; LDR R5,[R4,#2]; ... R15 += 2 */
         uint16_t sp = get_reg (cpu, 15) & 0xFFFE;
-        cpu->pc = rd16 (cpu->mem, sp) & 0xFFFE;
+        cpu->pc = rd16 (cpu->mem, (uint16_t)(sp + 2)) & 0xFFFE;
         set_reg (cpu, 15, (uint16_t)(sp + 2));
       }
       break;
     }
-    case 0xD: /* PUSH — push source value */
+    case 0xD: /* PUSH — write value at OLD R15, decrement R15 by 2 */
     {
+      /* Assembly: R4=old_sp; R2=old_sp-2; store R2 as new R15; write at R4 (old_sp) */
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
-      uint16_t sp = (get_reg (cpu, 15) - 2) & 0xFFFE;
-      set_reg (cpu, 15, sp);
-      wr16 (cpu->mem, sp, s.val);
+      uint16_t old_sp = get_reg (cpu, 15) & 0xFFFE;
+      set_reg (cpu, 15, (uint16_t)(old_sp - 2));
+      wr16 (cpu->mem, old_sp, s.val);
       break;
     }
-    case 0xF: /* POP — pop to dest operand */
+    case 0xF: /* POP — read from OLD R15+2, increment R15 by 2 */
     {
+      /* Assembly: R4=old_sp; R4+=2 (new_sp); store new_sp as R15; read from mem[new_sp] */
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
-      uint16_t sp = get_reg (cpu, 15) & 0xFFFE;
-      uint16_t v = rd16 (cpu->mem, sp);
+      uint16_t old_sp = get_reg (cpu, 15) & 0xFFFE;
+      uint16_t new_sp = (uint16_t)(old_sp + 2);
+      set_reg (cpu, 15, new_sp);
+      uint16_t v = rd16 (cpu->mem, new_sp);
       store_operand (cpu, &d, v);
-      set_reg (cpu, 15, (uint16_t)(sp + 2));
       break;
     }
     default:
@@ -1135,7 +1146,8 @@ uint16_t run9900_c (Tms9900Cpu* cpu)
     else if (op_hi >= 0x10)
     {
       /* 0x1000-0x1FFF: conditional jumps and JMP */
-      handle_branch_group (cpu, inst);
+      if (!handle_branch_group (cpu, inst))
+        return cpu->pc; /* JMP self-loop acts like IDLE */
     }
     else if (op_hi >= 0x0C)
     {
