@@ -400,12 +400,12 @@ static inline uint16_t sra16 (Tms9900Cpu* cpu, uint16_t v, uint8_t count)
   cpu->st &= 0x0E;
   if (count == 0)
     count = 16;
-  uint32_t vv = (uint32_t)(int32_t)(int16_t)v;
+  int32_t vv = (int32_t)(int16_t)v;
   uint16_t carry = 0;
   for (uint8_t i = 0; i < count; ++i)
   {
-    carry = (uint16_t)(vv & 1u);
-    vv = (vv >> 1) | (vv & 0x8000);
+    carry = (uint16_t)((uint32_t)vv & 1u);
+    vv >>= 1; /* arithmetic right shift on signed preserves sign bit */
   }
   if (carry)
     cpu->st |= TMS_ST_C;
@@ -546,6 +546,13 @@ static inline int branch_cond (uint16_t st, uint8_t cond)
   }
 }
 
+/* Forward declarations (needed for X instruction dispatch) */
+static inline void handle_two_operand (Tms9900Cpu* cpu, uint16_t inst);
+static inline void handle_format9 (Tms9900Cpu* cpu, uint16_t inst);
+static inline int  handle_branch_group (Tms9900Cpu* cpu, uint16_t inst);
+static inline void handle_shift_rotate (Tms9900Cpu* cpu, uint16_t inst);
+static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst);
+
 /* Function:  handle_immediate_system
  * ----------------------------------------
  * Execute op group 0 (immediate/system). Returns 0 to stop on IDLE.
@@ -644,33 +651,64 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
     case 0x10: /* BLWP */
     {
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
-      /* For mode=0, s.val is the register value which IS the vector address.
-       * For other modes, s.addr is the effective address and s.val = mem[s.addr]. */
-      uint16_t vec = (s.mode == 0) ? s.val : s.addr;
-      vec &= 0xFFFE;
-      uint16_t new_wp = rd16 (cpu->mem, vec) & 0xFFFE;
-      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(vec + 2)) & 0xFFFE;
+      /* Assembly reads [R5,#0] and [R5,#2] directly from the source operand address.
+       * For mode 0, R5 = WP+reg*2, so new_WP = reg[N], new_PC = reg[N+1].
+       * For other modes, R5 is the effective address in memory. */
+      uint16_t src_addr = (s.mode == 0)
+        ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+        : s.addr;
+      uint16_t new_wp = rd16 (cpu->mem, src_addr) & 0xFFFE;
+      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(src_addr + 2)) & 0xFFFE;
       /* save old context into R13/R14/R15 of new workspace (offsets 26/28/30) */
-      /* Assembly: STRH R2,[R0,#26]; STRH R3,[R0,#28]; STRH R1,[R0,#30]
-       * R1=ST (byte in low byte of reg), STRH without REV16 puts ST in high byte of TMS word.
-       * Using wr16 with st<<8 is equivalent; low byte of the stored word is 0. */
       wr16 (cpu->mem, (uint16_t)(new_wp + 26), cpu->wp);
       wr16 (cpu->mem, (uint16_t)(new_wp + 28), cpu->pc);
       wr16 (cpu->mem, (uint16_t)(new_wp + 30), (uint16_t)cpu->st << 8); /* ST→high byte, low byte=0 */
       cpu->wp = new_wp;
       cpu->pc = new_pc;
-      cpu->st = 0;
+      /* Assembly does NOT clear ST — new context inherits caller's flags */
       break;
     }
-    case 0x11: /* B — branch to source operand address (indirect) */
+    case 0x11: /* B — branch to source operand address */
     {
+      /* Assembly I_B: R3 = R5 - R8. For mode 0, R5 = WP+reg*2 (register's workspace
+       * address), so PC becomes the register's address, not its value. */
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
-      cpu->pc = (s.mode == 0 ? s.val : s.addr) & 0xFFFE;
+      uint16_t target = (s.mode == 0)
+        ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+        : s.addr;
+      cpu->pc = target & 0xFFFE;
       break;
     }
     case 0x12: /* X — execute instruction at source */
-      /* Not commonly used in GPU code; treat as NOP */
+    {
+      /* Assembly I_X: LDRH R0,[R5,#0]. For mode 0, R5 is the register address,
+       * so [R5,#0] loads the register VALUE which IS the instruction to execute.
+       * For other modes, R5 is the effective address, reading the instruction from memory. */
+      Operand s = decode_operand (cpu, inst & 0x3F, 0);
+      uint16_t x_inst = (s.mode == 0) ? s.val : rd16 (cpu->mem, s.addr);
+      /* Dispatch the fetched instruction (PC is NOT advanced by X itself) */
+      uint8_t x_hi = (uint8_t)(x_inst >> 8);
+      if (x_hi >= 0x40)
+        handle_two_operand (cpu, x_inst);
+      else if (x_hi >= 0x20)
+        handle_format9 (cpu, x_inst);
+      else if (x_hi >= 0x10)
+        handle_branch_group (cpu, x_inst);
+      else if (x_hi >= 0x0C)
+      {
+        if (x_hi == 0x0E)
+          handle_shift_rotate (cpu, x_inst);
+        else
+          handle_f18a_stack (cpu, x_inst);
+      }
+      else if (x_hi >= 0x08)
+        handle_shift_rotate (cpu, x_inst);
+      else if (x_hi >= 0x04)
+        handle_jump_single (cpu, x_inst);
+      else
+        handle_immediate_system (cpu, x_inst);
       break;
+    }
     case 0x13: /* CLR — no flag update (assembly does not touch ST) */
     {
       Operand d = decode_operand (cpu, inst & 0x3F, 0);
@@ -736,11 +774,15 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       store_operand (cpu, &d, res);
       break;
     }
-    case 0x1A: /* BL — branch and link (indirect), save PC to R11 */
+    case 0x1A: /* BL — branch and link, save PC to R11 */
     {
+      /* Assembly I_BL: R3 = R5 - R8. Same as B — mode 0 uses workspace address. */
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
       set_reg (cpu, 11, cpu->pc);
-      cpu->pc = (s.mode == 0 ? s.val : s.addr) & 0xFFFE;
+      uint16_t target = (s.mode == 0)
+        ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+        : s.addr;
+      cpu->pc = target & 0xFFFE;
       break;
     }
     case 0x1B: /* SWPB */
@@ -772,7 +814,9 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       {
         uint16_t res = (uint16_t)(0u - d.val);
         store_operand (cpu, &d, res);
-        set_flags_word (cpu, res);
+        /* Assembly I_ABS_no_ov: R0 still holds original negative value when
+         * OP_COMP_W is reached — flags are set on the ORIGINAL, not the result */
+        set_flags_word (cpu, d.val);
       }
       else
       {
@@ -993,14 +1037,16 @@ static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst)
       /* RET=0x0C00 (bits 6:0 of inst are 0), CALL=0x0C40+ (bit 6 set) */
       if (inst & 0x40)
       { /* CALL — push PC at OLD R15, pre-decrement R15 by 2, branch to source */
-        /* Assembly: SUBS R2,R4,#2; STRH R2,[R0,#30]; ADD R4,R8; STRH R5,[R4,#0]
-         * R4=old_sp, R2=new_sp; writes to R4 (old sp), not R2 (new sp) */
+        /* Assembly I_CALL: R3 = R5 - R8. Same as B — mode 0 uses workspace address. */
         Operand s = decode_operand (cpu, inst & 0x3F, 0);
         uint16_t old_sp = get_reg (cpu, 15) & 0xFFFE;
         uint16_t new_sp = (uint16_t)(old_sp - 2);
         set_reg (cpu, 15, new_sp);
         wr16 (cpu->mem, old_sp, cpu->pc); /* write at OLD sp, not new sp */
-        cpu->pc = (s.mode == 0 ? s.val : s.addr) & 0xFFFE;
+        uint16_t target = (s.mode == 0)
+          ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+          : s.addr;
+        cpu->pc = target & 0xFFFE;
       }
       else
       { /* RET — read PC from R15+2 (OLD R15), then post-increment R15 by 2 */
