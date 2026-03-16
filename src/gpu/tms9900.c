@@ -658,13 +658,16 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
         ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
         : s.addr;
       uint16_t new_wp = rd16 (cpu->mem, src_addr) & 0xFFFE;
-      uint16_t new_pc = rd16 (cpu->mem, (uint16_t)(src_addr + 2)) & 0xFFFE;
-      /* save old context into R13/R14/R15 of new workspace (offsets 26/28/30) */
-      wr16 (cpu->mem, (uint16_t)(new_wp + 26), cpu->wp);
-      wr16 (cpu->mem, (uint16_t)(new_wp + 28), cpu->pc);
-      wr16 (cpu->mem, (uint16_t)(new_wp + 30), (uint16_t)cpu->st << 8); /* ST→high byte, low byte=0 */
+      /* Assembly saves old context BEFORE reading new PC from [R5,#2].
+       * This matters if new workspace R13-R15 overlaps the BLWP vector. */
+      uint16_t old_wp = cpu->wp;
+      uint16_t old_pc = cpu->pc;
+      uint16_t old_st = cpu->st;
       cpu->wp = new_wp;
-      cpu->pc = new_pc;
+      wr16 (cpu->mem, (uint16_t)(new_wp + 26), old_wp);
+      wr16 (cpu->mem, (uint16_t)(new_wp + 28), old_pc);
+      wr16 (cpu->mem, (uint16_t)(new_wp + 30), (uint16_t)old_st << 8); /* ST→high byte, low byte=0 */
+      cpu->pc = rd16 (cpu->mem, (uint16_t)(src_addr + 2)) & 0xFFFE;
       /* Assembly does NOT clear ST — new context inherits caller's flags */
       break;
     }
@@ -998,7 +1001,99 @@ static inline void handle_format9 (Tms9900Cpu* cpu, uint16_t inst)
       set_flags_word (cpu, res);
       break;
     }
-    /* 0xB = 0x2C00-0x2FFF: XOP/F18A PIX — not emulated in C core */
+    case 0xB: /* 0x2C00-0x2FFF: XOP/F18A PIX */
+    {
+      /*
+       * PIX flag bits in the dest register value (R4 in assembly):
+       *   Bit 15: M   - Mode (1=BM, 0=BL)
+       *   Bit 14: A   - Address only (return calculated address, skip pixel ops)
+       *   Bit 11: R   - Read back current pixel value into dest reg bits [1:0]
+       *   Bit 10: W   - When set, skip write (write disabled)
+       *   Bit  9: C   - Conditional write (when set, test before writing)
+       *   Bit  8: E   - Equal/Not-equal select (1=not-equal test, 0=equal test)
+       *   Bits[5:4]: PP compare - Pixel pattern for conditional comparison
+       *   Bits[1:0]: PP write   - Pixel pattern value for writing
+       *
+       * Mask and shift lookup (matches MSKSH in assembly):
+       *   mask[s]:  0xC0, 0x30, 0x0C, 0x03
+       *   shift[s]: 6, 4, 2, 0
+       */
+      static const uint8_t pix_mask[]  = {0xC0, 0x30, 0x0C, 0x03};
+      static const uint8_t pix_shift[] = {6, 4, 2, 0};
+
+      uint16_t flags = get_reg (cpu, dreg);
+      uint16_t xy    = src.val;
+      uint8_t  x     = (uint8_t)(xy >> 8);
+      uint8_t  y     = (uint8_t)(xy & 0xFF);
+
+      if (flags & 0x8000) /* PIX_M: BM mode */
+      {
+        /* Calculate pattern name table byte offset from X,Y (E/A 335-336) */
+        uint16_t r = (uint16_t)(((uint16_t)y << 5) | y);
+        r &= (uint16_t)~0xF8;
+        r |= (uint16_t)(x & 0xF8);
+
+        uint8_t vr04 = cpu->mem[0x6004];
+        r |= (uint16_t)((vr04 & 0x04) << 11);
+
+        set_reg (cpu, dreg, r);
+      }
+      else /* BL mode */
+      {
+        uint8_t  vr35  = cpu->mem[0x6023];
+        uint16_t width = (vr35 == 0) ? 256u : (uint16_t)vr35;
+
+        uint16_t p = (uint16_t)((y * width) + x);
+        uint8_t  vr32  = cpu->mem[0x6020];
+        uint16_t a     = (uint16_t)(((uint16_t)vr32 << 6) + (p >> 2));
+
+        if (flags & 0x4000) /* PIX_A: address only */
+        {
+          set_reg (cpu, dreg, a);
+          break;
+        }
+
+        uint8_t s    = (uint8_t)(p & 0x03);
+        uint8_t b    = cpu->mem[a];
+        uint8_t pixv = (uint8_t)((b & pix_mask[s]) >> pix_shift[s]);
+
+        /* Write logic */
+        int do_write = 0;
+        if (!(flags & 0x0400)) /* bit 10 clear: writes allowed */
+        {
+          if (!(flags & 0x0200)) /* bit 9 clear: unconditional write */
+          {
+            do_write = 1;
+          }
+          else /* conditional write */
+          {
+            uint8_t pp_cmp = (uint8_t)((flags >> 4) & 0x03);
+            if (flags & 0x0100) /* PIX_E set: not-equal test */
+            {
+              if (pixv == pp_cmp) do_write = 1;
+            }
+            else /* equal test */
+            {
+              if (pixv != pp_cmp) do_write = 1;
+            }
+          }
+        }
+
+        if (do_write)
+        {
+          uint8_t pp_wr = (uint8_t)(flags & 0x03);
+          b = (uint8_t)((b & ~pix_mask[s]) | (pp_wr << pix_shift[s]));
+          cpu->mem[a] = b;
+        }
+
+        if (flags & 0x0800) /* PIX_R: read back pixel into dest reg */
+        {
+          flags = (uint16_t)((flags & ~0x03) | pixv);
+          set_reg (cpu, dreg, flags);
+        }
+      }
+      break;
+    }
     case 0xE: /* 0x3800 MPY */
     {
       uint32_t prod = (uint32_t)get_reg (cpu, dreg) * (uint32_t)src.val;
@@ -1087,8 +1182,10 @@ static inline void handle_two_operand (Tms9900Cpu* cpu, uint16_t inst)
 {
   uint8_t opcode = (uint8_t)((inst >> 12) & 0xF);
   uint8_t byte_op = opcode & 1; /* odd opcode = byte variant */
-  Operand src = decode_operand (cpu, (uint8_t)((inst >> 6) & 0x3F), byte_op);
-  Operand dst = decode_operand (cpu, (uint8_t)(inst & 0x3F), byte_op);
+  /* TMS9900 two-operand format: bits 5:0 = source (Ts+S), bits 11:6 = dest (Td+D).
+   * Source must be decoded first to match assembly decode order (PC fetch sequence). */
+  Operand src = decode_operand (cpu, (uint8_t)(inst & 0x3F), byte_op);
+  Operand dst = decode_operand (cpu, (uint8_t)((inst >> 6) & 0x3F), byte_op);
 
   switch (opcode)
   {
