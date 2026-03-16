@@ -116,34 +116,30 @@ static inline uint16_t rd16 (uint8_t* m, uint16_t a)
   return (uint16_t)((m[a] << 8) | m[(uint16_t)(a + 1)]);
 }
 
-/* Function:  rd16
- * ----------------------------------------
- * Read a big-endian 16-bit word from the emulated memory.
- */
 static inline void wr16 (uint8_t* m, uint16_t a, uint16_t v)
 {
   m[a] = (uint8_t)(v >> 8);
   m[(uint16_t)(a + 1)] = (uint8_t)(v & 0xFF);
 }
 
-/* Function:  wr16
- * ----------------------------------------
- * Write a big-endian 16-bit word into the emulated memory.
- */
-static inline uint16_t get_reg (Tms9900Cpu* cpu, uint8_t r)
+/* Workspace address: WP + r*2 as uint32_t to handle WP=0xFFFE overflow
+ * past the 64KB boundary into the workspace overflow area */
+static inline uint32_t wp_addr (Tms9900Cpu* cpu, uint8_t r)
 {
-  uint16_t addr = (uint16_t)(cpu->wp + ((uint16_t)r << 1));
-  return rd16 (cpu->mem, addr);
+  return (uint32_t)cpu->wp + ((uint32_t)r << 1);
 }
 
-/* Function:  get_reg
- * ----------------------------------------
- * Load a workspace register value via the current WP.
- */
+static inline uint16_t get_reg (Tms9900Cpu* cpu, uint8_t r)
+{
+  uint32_t a = wp_addr (cpu, r);
+  return (uint16_t)((cpu->mem[a] << 8) | cpu->mem[a + 1]);
+}
+
 static inline void set_reg (Tms9900Cpu* cpu, uint8_t r, uint16_t v)
 {
-  uint16_t addr = (uint16_t)(cpu->wp + ((uint16_t)r << 1));
-  wr16 (cpu->mem, addr, v);
+  uint32_t a = wp_addr (cpu, r);
+  cpu->mem[a]     = (uint8_t)(v >> 8);
+  cpu->mem[a + 1] = (uint8_t)(v & 0xFF);
 }
 
 /* Operand addressing */
@@ -160,7 +156,6 @@ typedef struct Operand
   uint8_t is_byte;
 } Operand;
 
-/* Fetch a word and advance PC (word-addressed) */
 static inline uint16_t fetchw (Tms9900Cpu* cpu)
 {
   uint16_t v = rd16 (cpu->mem, cpu->pc);
@@ -186,8 +181,8 @@ static Operand decode_operand (Tms9900Cpu* cpu, uint8_t field, uint8_t is_byte)
        * WP+reg*2 is the high byte in big-endian memory (assembly: LDRB/STRB at [WP+reg*2]).
        * For word ops, read the full 16-bit word. */
       if (is_byte)
-        o.addr = (uint16_t)(cpu->wp + ((uint16_t)o.reg << 1)); /* high byte address */
-      o.val = is_byte ? rd8 (cpu->mem, (uint16_t)(cpu->wp + ((uint16_t)o.reg << 1)))
+        o.addr = (uint16_t)wp_addr (cpu, o.reg); /* high byte address */
+      o.val = is_byte ? cpu->mem[wp_addr (cpu, o.reg)]
                       : get_reg (cpu, o.reg);
       break;
     case 1: /* indirect — assembly word-aligns effective address for word ops */
@@ -235,7 +230,7 @@ static void store_operand (Tms9900Cpu* cpu, const Operand* o, uint16_t v)
     {
       /* Byte register write: assembly does STRB at WP+reg*2 (high byte of the word).
        * Only the high byte is updated; low byte is unchanged. */
-      wr8 (cpu->mem, (uint16_t)(cpu->wp + ((uint16_t)o->reg << 1)), (uint8_t)v);
+      cpu->mem[wp_addr (cpu, o->reg)] = (uint8_t)v;
     }
     else
     {
@@ -607,8 +602,7 @@ static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
     case 0x15: /* STWP — 0x02A0 — store WP into dest register */
       set_reg (cpu, dest_reg, cpu->wp);
       break;
-    case 0x16: /* STST — 0x02C0 — store ST into dest register (high byte of word) */
-      /* Assembly: STRH R1,[R6,#0] where R1=ST in low byte stored as high byte of TMS word */
+    case 0x16: /* STST — 0x02C0 — store ST into dest register */
       set_reg (cpu, dest_reg, (uint16_t)cpu->st << 8);
       break;
     case 0x17: /* LWPI — 0x02E0 — load WP immediate (word-aligned) */
@@ -622,10 +616,10 @@ static inline int handle_immediate_system (Tms9900Cpu* cpu, uint16_t inst)
     case 0x1C: /* RTWP — 0x0380 */
     {
       /* Restore ST/PC/WP from R15/R14/R13 (offsets 30/28/26) of current workspace */
-      uint16_t old_wp = cpu->wp;
-      cpu->st = rd8  (cpu->mem, (uint16_t)(old_wp + 30));
-      cpu->pc = rd16 (cpu->mem, (uint16_t)(old_wp + 28)) & 0xFFFE;
-      cpu->wp = rd16 (cpu->mem, (uint16_t)(old_wp + 26)) & 0xFFFE;
+      uint32_t owp = (uint32_t)cpu->wp;
+      cpu->st = cpu->mem[owp + 30];
+      cpu->pc = (uint16_t)((cpu->mem[owp + 28] << 8) | cpu->mem[owp + 29]) & 0xFFFE;
+      cpu->wp = (uint16_t)((cpu->mem[owp + 26] << 8) | cpu->mem[owp + 27]) & 0xFFFE;
       break;
     }
     case 0x1D: /* CKON — 0x03A0 */
@@ -655,7 +649,7 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
        * For mode 0, R5 = WP+reg*2, so new_WP = reg[N], new_PC = reg[N+1].
        * For other modes, R5 is the effective address in memory. */
       uint16_t src_addr = (s.mode == 0)
-        ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+        ? (uint16_t)wp_addr (cpu, inst & 0xF)
         : s.addr;
       uint16_t new_wp = rd16 (cpu->mem, src_addr) & 0xFFFE;
       /* Assembly saves old context BEFORE reading new PC from [R5,#2].
@@ -664,6 +658,7 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       uint16_t old_pc = cpu->pc;
       uint16_t old_st = cpu->st;
       cpu->wp = new_wp;
+      /* new workspace is always in normal address space (not overflow) */
       wr16 (cpu->mem, (uint16_t)(new_wp + 26), old_wp);
       wr16 (cpu->mem, (uint16_t)(new_wp + 28), old_pc);
       wr16 (cpu->mem, (uint16_t)(new_wp + 30), (uint16_t)old_st << 8); /* ST→high byte, low byte=0 */
@@ -677,7 +672,7 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
        * address), so PC becomes the register's address, not its value. */
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
       uint16_t target = (s.mode == 0)
-        ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+        ? (uint16_t)wp_addr (cpu, inst & 0xF)
         : s.addr;
       cpu->pc = target & 0xFFFE;
       break;
@@ -783,7 +778,7 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
       set_reg (cpu, 11, cpu->pc);
       uint16_t target = (s.mode == 0)
-        ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+        ? (uint16_t)wp_addr (cpu, inst & 0xF)
         : s.addr;
       cpu->pc = target & 0xFFFE;
       break;
@@ -1139,7 +1134,7 @@ static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst)
         set_reg (cpu, 15, new_sp);
         wr16 (cpu->mem, old_sp, cpu->pc); /* write at OLD sp, not new sp */
         uint16_t target = (s.mode == 0)
-          ? (uint16_t)(cpu->wp + ((uint16_t)(inst & 0xF) << 1))
+          ? (uint16_t)wp_addr (cpu, inst & 0xF)
           : s.addr;
         cpu->pc = target & 0xFFFE;
       }
