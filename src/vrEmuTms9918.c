@@ -2294,20 +2294,6 @@ void __time_critical_func(vrEmuTms9918WriteRegValue)(VR_EMU_INST_ARG vrEmuTms991
 
     int regIndex = reg & tms9918->lockedMask; // was 0x07
     
-    // Auto-lock if we're unlocked but register 0 is being written
-    // This handles case where system resets without resetting VDP (common on ColecoVision)
-    // Legitimate F18A code should unlock after writing R0, so this is safe
-    if (false && tms9918->isUnlocked && regIndex == 0)
-    {
-      // Force re-lock to standard TMS9918 mode
-      tms9918->isUnlocked = false;
-      tms9918->lockedMask = 0x07;
-      tms9918->unlockCount = 0;
-      // Don't call vdpRegisterReset as that would reset all registers
-      // Just ensure sprite limit is back to normal
-      TMS_REGISTER(tms9918, 0x1e) = MAX_SPRITES - 1;
-    }
-    
     TMS_REGISTER(tms9918, regIndex) = value;
 
     if (regIndex < 0x0f) return;
