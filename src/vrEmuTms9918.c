@@ -801,12 +801,14 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
       thisSpriteSizePx += xPos;
       xPos = 0;
     }
-    int overflowPx = (xPos + thisSpriteSizePx) - TMS9918_PIXELS_X;
-    if (overflowPx > 0)
-    {
-      thisSpriteSizePx -= overflowPx;
-    }
 
+    int pixelsLeft = TMS9918_PIXELS_X - xPos;
+    if (pixelsLeft < thisSpriteSizePx)
+    {
+        thisSpriteSizePx = pixelsLeft;
+        pattMask &= ~((1u << (32 - pixelsLeft)) - 1);
+    }
+    
     /* test and update the collision mask */
     uint32_t validPixels = tmsTestCollisionMask(VR_EMU_INST xPos, pattMask, thisSpriteSizePx);
 
