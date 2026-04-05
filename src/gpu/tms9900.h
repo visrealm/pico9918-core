@@ -32,7 +32,7 @@ extern "C"
   {
     uint8_t* mem;    /* Pointer to memory backing the CPU */
     uint8_t* regx38; /* Pointer to the GPU control byte (TMS register 0x38) */
-    uint16_t pc;     /* Program counter */
+    uint32_t pc;     /* Program counter (uint32_t to handle WP=0xFFFE overflow) */
     uint16_t wp;     /* Workspace pointer */
     uint16_t st;     /* Status register (flag layout matches assembly core) */
   } Tms9900Cpu;

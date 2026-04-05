@@ -158,8 +158,9 @@ typedef struct Operand
 
 static inline uint16_t fetchw (Tms9900Cpu* cpu)
 {
-  uint16_t v = rd16 (cpu->mem, cpu->pc);
-  cpu->pc = (uint16_t)(cpu->pc + 2);
+  uint32_t a = cpu->pc;
+  uint16_t v = (uint16_t)((cpu->mem[a] << 8) | cpu->mem[a + 1]);
+  cpu->pc = (a + 2) & 0xFFFF;
   return v;
 }
 
@@ -647,11 +648,12 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
       /* Assembly reads [R5,#0] and [R5,#2] directly from the source operand address.
        * For mode 0, R5 = WP+reg*2, so new_WP = reg[N], new_PC = reg[N+1].
-       * For other modes, R5 is the effective address in memory. */
-      uint16_t src_addr = (s.mode == 0)
-        ? (uint16_t)wp_addr (cpu, inst & 0xF)
-        : s.addr;
-      uint16_t new_wp = rd16 (cpu->mem, src_addr) & 0xFFFE;
+       * For other modes, R5 is the effective address in memory.
+       * Must use uint32_t — with WP=0xFFFE, registers R1+ are past 0x10000. */
+      uint32_t src_addr = (s.mode == 0)
+        ? wp_addr (cpu, inst & 0xF)
+        : (uint32_t)s.addr;
+      uint16_t new_wp = (uint16_t)((cpu->mem[src_addr] << 8) | cpu->mem[src_addr + 1]) & 0xFFFE;
       /* Assembly saves old context BEFORE reading new PC from [R5,#2].
        * This matters if new workspace R13-R15 overlaps the BLWP vector. */
       uint16_t old_wp = cpu->wp;
@@ -662,18 +664,19 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
       wr16 (cpu->mem, (uint16_t)(new_wp + 26), old_wp);
       wr16 (cpu->mem, (uint16_t)(new_wp + 28), old_pc);
       wr16 (cpu->mem, (uint16_t)(new_wp + 30), (uint16_t)old_st << 8); /* ST→high byte, low byte=0 */
-      cpu->pc = rd16 (cpu->mem, (uint16_t)(src_addr + 2)) & 0xFFFE;
+      cpu->pc = (uint16_t)((cpu->mem[src_addr + 2] << 8) | cpu->mem[src_addr + 3]) & 0xFFFE;
       /* Assembly does NOT clear ST — new context inherits caller's flags */
       break;
     }
     case 0x11: /* B — branch to source operand address */
     {
       /* Assembly I_B: R3 = R5 - R8. For mode 0, R5 = WP+reg*2 (register's workspace
-       * address), so PC becomes the register's address, not its value. */
+       * address), so PC becomes the register's address, not its value.
+       * Must use uint32_t — with WP=0xFFFE, registers R1+ are past 0x10000. */
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
-      uint16_t target = (s.mode == 0)
-        ? (uint16_t)wp_addr (cpu, inst & 0xF)
-        : s.addr;
+      uint32_t target = (s.mode == 0)
+        ? wp_addr (cpu, inst & 0xF)
+        : (uint32_t)s.addr;
       cpu->pc = target & 0xFFFE;
       break;
     }
@@ -774,12 +777,13 @@ static inline void handle_jump_single (Tms9900Cpu* cpu, uint16_t inst)
     }
     case 0x1A: /* BL — branch and link, save PC to R11 */
     {
-      /* Assembly I_BL: R3 = R5 - R8. Same as B — mode 0 uses workspace address. */
+      /* Assembly I_BL: R3 = R5 - R8. Same as B — mode 0 uses workspace address.
+       * Must use uint32_t — with WP=0xFFFE, registers R1+ are past 0x10000. */
       Operand s = decode_operand (cpu, inst & 0x3F, 0);
-      set_reg (cpu, 11, cpu->pc);
-      uint16_t target = (s.mode == 0)
-        ? (uint16_t)wp_addr (cpu, inst & 0xF)
-        : s.addr;
+      set_reg (cpu, 11, (uint16_t)cpu->pc);
+      uint32_t target = (s.mode == 0)
+        ? wp_addr (cpu, inst & 0xF)
+        : (uint32_t)s.addr;
       cpu->pc = target & 0xFFFE;
       break;
     }
@@ -845,56 +849,56 @@ static inline int handle_branch_group (Tms9900Cpu* cpu, uint16_t inst)
   {
     case 0x0: /* JMP — unconditional */
       /* Assembly: self-jump (disp==-2, i.e. JMP $) treated as IDLE — exit emulation */
-      if (disp == -2) { cpu->pc = (uint16_t)(cpu->pc - 2); return 0; }
-      cpu->pc = (uint16_t)(cpu->pc + disp);
+      if (disp == -2) { cpu->pc = (cpu->pc - 2) & 0xFFFF; return 0; }
+      cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x1: /* JLT — signed < (AGT=0 and EQ=0) */
       if ((cpu->st & (TMS_ST_AGT | TMS_ST_EQ)) == 0)
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x2: /* JLE — unsigned ≤ (LGT=0 or EQ=1) */
       if (!(cpu->st & TMS_ST_LGT) || (cpu->st & TMS_ST_EQ))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x3: /* JEQ */
       if (cpu->st & TMS_ST_EQ)
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x4: /* JHE — unsigned ≥ (LGT=1 or EQ=1) */
       if (cpu->st & (TMS_ST_LGT | TMS_ST_EQ))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x5: /* JGT — signed > (AGT=1) */
       if (cpu->st & TMS_ST_AGT)
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x6: /* JNE */
       if (!(cpu->st & TMS_ST_EQ))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x7: /* JNC — no carry */
       if (!(cpu->st & TMS_ST_C))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x8: /* JOC — carry set */
       if (cpu->st & TMS_ST_C)
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0x9: /* JNO — no overflow */
       if (!(cpu->st & TMS_ST_OV))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0xA: /* JL — unsigned < (LGT=0 and EQ=0) */
       if (!(cpu->st & (TMS_ST_LGT | TMS_ST_EQ)))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0xB: /* JH — unsigned > (LGT=1 and EQ=0) */
       if ((cpu->st & TMS_ST_LGT) && !(cpu->st & TMS_ST_EQ))
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     case 0xC: /* JOP — parity */
       if (cpu->st & TMS_ST_P)
-        cpu->pc = (uint16_t)(cpu->pc + disp);
+        cpu->pc = (cpu->pc + disp) & 0xFFFF;
       break;
     /* 0xD=SBO, 0xE=SBZ: CRU ops, NOP */
     case 0xF: /* TB — CRU test, clears EQ */
@@ -1127,15 +1131,16 @@ static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst)
       /* RET=0x0C00 (bits 6:0 of inst are 0), CALL=0x0C40+ (bit 6 set) */
       if (inst & 0x40)
       { /* CALL — push PC at OLD R15, pre-decrement R15 by 2, branch to source */
-        /* Assembly I_CALL: R3 = R5 - R8. Same as B — mode 0 uses workspace address. */
+        /* Assembly I_CALL: R3 = R5 - R8. Same as B — mode 0 uses workspace address.
+         * Must use uint32_t — with WP=0xFFFE, registers R1+ are past 0x10000. */
         Operand s = decode_operand (cpu, inst & 0x3F, 0);
         uint16_t old_sp = get_reg (cpu, 15) & 0xFFFE;
         uint16_t new_sp = (uint16_t)(old_sp - 2);
         set_reg (cpu, 15, new_sp);
-        wr16 (cpu->mem, old_sp, cpu->pc); /* write at OLD sp, not new sp */
-        uint16_t target = (s.mode == 0)
-          ? (uint16_t)wp_addr (cpu, inst & 0xF)
-          : s.addr;
+        wr16 (cpu->mem, old_sp, (uint16_t)cpu->pc); /* write at OLD sp, not new sp */
+        uint32_t target = (s.mode == 0)
+          ? wp_addr (cpu, inst & 0xF)
+          : (uint32_t)s.addr;
         cpu->pc = target & 0xFFFE;
       }
       else
