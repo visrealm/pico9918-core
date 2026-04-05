@@ -834,12 +834,14 @@ static inline uint8_t __time_critical_func(renderSprites)(VR_EMU_INST_ARG uint16
       thisSpriteSizePx += xPos;
       xPos = 0;
     }
-    int overflowPx = (xPos + thisSpriteSizePx) - TMS9918_PIXELS_X;
-    if (overflowPx > 0)
-    {
-      thisSpriteSizePx -= overflowPx;
-    }
 
+    int pixelsLeft = TMS9918_PIXELS_X - xPos;
+    if (pixelsLeft < thisSpriteSizePx)
+    {
+        thisSpriteSizePx = pixelsLeft;
+        pattMask &= ~((1u << (32 - pixelsLeft)) - 1);
+    }
+    
     /* test and update the collision mask */
     uint32_t validPixels = tmsTestCollisionMask(VR_EMU_INST xPos, pattMask, thisSpriteSizePx);
 
@@ -1271,20 +1273,6 @@ void __time_critical_func(vrEmuTms9918WriteRegValue)(VR_EMU_INST_ARG vrEmuTms991
     if ((reg & ~tms9918->lockedMask) != 0x80) return; //ignore higher registers when locked
 
     int regIndex = reg & tms9918->lockedMask; // was 0x07
-    
-    // Auto-lock if we're unlocked but register 0 is being written
-    // This handles case where system resets without resetting VDP (common on ColecoVision)
-    // Legitimate F18A code should unlock after writing R0, so this is safe
-    if (false && tms9918->isUnlocked && regIndex == 0)
-    {
-      // Force re-lock to standard TMS9918 mode
-      tms9918->isUnlocked = false;
-      tms9918->lockedMask = 0x07;
-      tms9918->unlockCount = 0;
-      // Don't call vdpRegisterReset as that would reset all registers
-      // Just ensure sprite limit is back to normal
-      TMS_REGISTER(tms9918, 0x1e) = MAX_SPRITES - 1;
-    }
     
     TMS_REGISTER(tms9918, regIndex) = value;
 
