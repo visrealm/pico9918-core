@@ -1129,7 +1129,7 @@ static inline void handle_f18a_stack (Tms9900Cpu* cpu, uint16_t inst)
     case 0xC:
     {
       /* RET=0x0C00 (bits 6:0 of inst are 0), CALL=0x0C40+ (bit 6 set) */
-      if (inst & 0x40)
+      if (inst & 0xC0)
       { /* CALL — push PC at OLD R15, pre-decrement R15 by 2, branch to source */
         /* Assembly I_CALL: R3 = R5 - R8. Same as B — mode 0 uses workspace address.
          * Must use uint32_t — with WP=0xFFFE, registers R1+ are past 0x10000. */
