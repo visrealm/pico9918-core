@@ -396,3 +396,10 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# CMake build trees, and the Doxygen output the docs target puts inside one
+build*/
+
+# Generated API documentation. CI builds it and publishes it; it is never
+# committed, so a regeneration cannot show up as a thousand-file diff.
+/doc/
