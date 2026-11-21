@@ -1,5 +1,6 @@
-/*
- * pico9918-core - V9938 base: the command engine
+/**
+ * \file
+ * \brief pico9918-core - V9938 base: the command engine
  *
  * Copyright (c) 2026 Troy Schrapel
  *
@@ -8,7 +9,7 @@
  * https://github.com/visrealm/pico9918-core
  *
  * Behaviour follows the Yamaha V9938 Technical Data Book, and openMSX where the book
- * is silent. Timing is not emulated: a command runs as fast as its caller steps it.
+ * is silent.
  */
 
 #include "impl/pico9918_priv.h"
@@ -399,9 +400,10 @@ bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget
     return false;
   }
 
-  const uint8_t state = !(TMS_REGISTER(tms9918, TMS_REG_1) & 0x40)                                  ? 0
-                        : (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_SPD) ? 1
-                                                                                                    : 2;
+  uint32_t state = 0;
+  if (TMS_REGISTER(tms9918, TMS_REG_1) & TMS_R1_DISP_ACTIVE)
+    state = (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_SPD) ? 1 : 2;
+
   const uint32_t cost = unitCost[state][c->op - OP_SRCH];
   uint32_t credit     = produced - c->spent;
   if (credit > PICO9918_V9938_FRAME_TICKS) credit = PICO9918_V9938_FRAME_TICKS;

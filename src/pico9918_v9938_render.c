@@ -1,5 +1,6 @@
-/*
- * pico9918-core - V9938 base: display modes
+/**
+ * \file
+ * \brief pico9918-core - V9938 base: display modes
  *
  * Copyright (c) 2026 Troy Schrapel
  *

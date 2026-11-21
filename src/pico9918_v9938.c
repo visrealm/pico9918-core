@@ -1,5 +1,6 @@
-/*
- * pico9918-core - V9938 base: the host ports, registers and status
+/**
+ * \file
+ * \brief pico9918-core - V9938 base: the host ports, registers and status
  *
  * Copyright (c) 2026 Troy Schrapel
  *

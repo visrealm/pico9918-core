@@ -122,7 +122,8 @@ PREDEFINED             = __attribute__(x)= \
                          PICO9918_BUILD_TEXT80_8BPP=1 \
                          PICO9918_BUILD_RUNTIME_CHIP=1 \
                          PICO9918_BUILD_SINGLE_INSTANCE=0 \
-                         PICO9918_BUILD_DEBUG_API=1
+                         PICO9918_BUILD_DEBUG_API=1 \
+                         PICO9918_V9938_BASE=1
 
 # ---------------------------------------------------------------------------
 # Output

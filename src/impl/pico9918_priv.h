@@ -562,32 +562,52 @@ void pico9918_write_reg_value_impl(PICO9918_INST_ARG uint8_t regSelect, uint8_t 
 #define PICO9918_DOUBLE_ROWS(T) \
   (PICO9918_V9938_ACTIVE(T) ? PICO9918_V9938_IL_EO(T) : (TMS_REGISTER(T, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) != 0)
 
+/** \brief a byte to port 1 */
 void pico9918_v9938_write_ctrl(PICO9918_INST_ARG uint8_t data);
+/** \brief a byte to port 0 */
 void pico9918_v9938_write_data(PICO9918_INST_ARG uint8_t data);
+/** \brief refill the read-ahead buffer and advance the address */
 uint8_t pico9918_v9938_fetch(PICO9918_INST_ONLY_ARG);
+/** \brief a byte to port 2 */
 void pico9918_v9938_write_palette(PICO9918_INST_ARG uint8_t data);
+/** \brief a byte to port 3 */
 void pico9918_v9938_write_indirect(PICO9918_INST_ARG uint8_t data);
+/** \brief set register \p reg, however the host addressed it */
 void pico9918_v9938_write_reg(PICO9918_INST_ARG uint8_t reg, uint8_t value);
+/** \brief status register \p reg, without the side effects of reading it */
 uint8_t pico9918_v9938_status_peek(PICO9918_INST_ARG uint8_t reg);
+/** \brief the side effects of the host reading status register \p reg */
 void pico9918_v9938_status_read(PICO9918_INST_ARG uint8_t reg);
+/** \brief the V9938 state as at power-on */
 void pico9918_v9938_reset(PICO9918_INST_ONLY_ARG);
+/** \brief the VRAM address of the next host access, after R#14 and planar mapping */
 uint32_t pico9918_v9938_cpu_addr(PICO9918_INST_ONLY_ARG);
 
-/* M5 M4 M3 M2 M1, the V9938's mode number: G4 0x0C, G5 0x10, G6 0x14, G7 0x1C */
+/** \brief M5 M4 M3 M2 M1, the V9938's mode number: G4 0x0C, G5 0x10, G6 0x14, G7 0x1C */
 #define PICO9918_V9938_MODE_BITS(T)                                                                \
   ((uint8_t)(((TMS_REGISTER(T, TMS_REG_0) & 0x0E) << 1) | ((TMS_REGISTER(T, TMS_REG_1) & 0x08) >> 2) | \
              ((TMS_REGISTER(T, TMS_REG_1) & 0x10) >> 4)))
 
+/** \brief the display mode R#0 and R#1 select */
 pico9918_mode_t pico9918_v9938_mode(PICO9918_INST_ONLY_ARG);
+/** \brief active lines, 192 or 212 by R#9 LN */
 int pico9918_v9938_lines(PICO9918_INST_ONLY_ARG);
+/** \brief render line \p y of G4 to G7 */
 void pico9918_v9938_bitmap_line(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
+/** \brief load the palette LUT with G7's fixed GRB332 colours */
 void pico9918_v9938_direct_lut(void);
+/** \brief the border pixel pair R#7 selects in the current mode */
 uint32_t pico9918_v9938_border(PICO9918_INST_ONLY_ARG);
+/** \brief once per frame: the even/odd field and the R#13 blink */
 void pico9918_v9938_frame(PICO9918_INST_ONLY_ARG);
+/** \brief overdraw line \p y of TEXT2 with the blink colour where the blink table says */
 void pico9918_v9938_text2_blink(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
+/** \brief draw line \p y's sprites over \p pixels and return its S#0 */
 uint8_t pico9918_v9938_sprites(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
 
+/** \brief a write to command register \p reg, R#32 to R#46 */
 void pico9918_v9938_cmd_write(PICO9918_INST_ARG uint8_t reg, uint8_t value);
+/** \brief the side effects of the host reading S#7 or S#9 */
 void pico9918_v9938_cmd_status_read(PICO9918_INST_ARG uint8_t reg);
 #endif
 

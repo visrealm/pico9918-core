@@ -121,7 +121,7 @@ typedef enum
   TMS_MODE_TEXT,
   TMS_MODE_MULTICOLOR,
   TMS_MODE_TEXT80,
-#ifdef PICO9918_V9938_BASE /* V9938 base scaffold (additive to pico9918-core) */
+#ifdef PICO9918_V9938_BASE
   TMS_MODE_V9938_G4,
   TMS_MODE_V9938_G5,
   TMS_MODE_V9938_G6,

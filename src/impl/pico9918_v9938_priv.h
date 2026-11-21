@@ -1,5 +1,6 @@
-/*
- * pico9918-core - V9938 base, private interface
+/**
+ * \file
+ * \brief pico9918-core - V9938 base, private interface
  *
  * Copyright (c) 2026 Troy Schrapel
  *
@@ -47,14 +48,15 @@
 #define PICO9918_V9938_S2_EO 0x02
 #define PICO9918_V9938_S2_CE 0x01
 
+/** \brief the command in flight, and the time the rendered lines have given it */
 typedef struct
 {
-  uint8_t status; /* S#2's TR and BD bits */
+  uint8_t status; /**< S#2's TR and BD bits */
 
   /* TRAP: S#2's CE, its own byte so a read-modify-write of status on the other core cannot undo it */
   uint8_t ce;
-  uint8_t color;    /* S#7 */
-  uint16_t borderX; /* S#8, S#9 */
+  uint8_t color;    /**< S#7 */
+  uint16_t borderX; /**< S#8, S#9 */
   uint8_t op;
   uint8_t logop;
   uint8_t arg;
@@ -76,17 +78,18 @@ typedef struct
 
 #define PICO9918_V9938_FRAME_TICKS (1u << 20)
 
+/** \brief the V9938 state the F18A has no place for */
 typedef struct
 {
   uint8_t palLatch;
   uint8_t palStage;
   uint8_t hrToggle;
   uint8_t blinkOn;
-  uint16_t collisionX; /* S#3, S#4 */
-  uint16_t collisionY; /* S#5, S#6 */
+  uint16_t collisionX; /**< S#3, S#4 */
+  uint16_t collisionY; /**< S#5, S#6 */
   uint8_t blinkCount;
   uint8_t blinkReload;
-  uint8_t field; /* S#2 EO */
+  uint8_t field; /**< S#2 EO */
   uint8_t lineField;
   uint8_t wide;
   uint8_t raw[7];

@@ -1,5 +1,6 @@
-/*
- * pico9918-core - V9938 base: sprite mode 2
+/**
+ * \file
+ * \brief pico9918-core - V9938 base: sprite mode 2
  *
  * Copyright (c) 2026 Troy Schrapel
  *
