@@ -581,6 +581,8 @@ int pico9918_v9938_lines(PICO9918_INST_ONLY_ARG);
 void pico9918_v9938_bitmap_line(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
 void pico9918_v9938_direct_lut(void);
 uint32_t pico9918_v9938_border(PICO9918_INST_ONLY_ARG);
+void pico9918_v9938_frame(PICO9918_INST_ONLY_ARG);
+void pico9918_v9938_text2_blink(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
 
 /* the command engine: a register write, a status read with a side effect, and a slice of work */
 void pico9918_v9938_cmd_write(PICO9918_INST_ARG uint8_t reg, uint8_t value);

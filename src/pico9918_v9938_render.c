@@ -131,6 +131,39 @@ void __time_critical_func(pico9918_v9938_bitmap_line)(PICO9918_INST_ARG uint32_t
   }
 }
 
+void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
+{
+  const uint32_t sy      = (uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL));
+  const uint32_t row     = sy >> 3;
+  const uint8_t* vram    = tms9918->vram.bytes;
+  const uint8_t* names   = vram + ((uint32_t)(TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x7C) << 10) + row * 80;
+  const uint8_t* pattern = vram + ((uint32_t)(TMS_REGISTER(tms9918, TMS_REG_PATTERN_TABLE) & 0x3F) << 11) + (sy & 7);
+  const uint32_t colors  = ((uint32_t)TMS_REGISTER(tms9918, PICO9918_V9938_REG_COLOR_HI) << 14) |
+                          ((uint32_t)TMS_REGISTER(tms9918, TMS_REG_COLOR_TABLE) << 6) | 0x3F;
+  const uint8_t r12      = TMS_REGISTER(tms9918, PICO9918_V9938_REG_BLINK_COLOR);
+  const uint8_t bg       = r12 & 0x0F;
+  const uint8_t fg       = (r12 >> 4) ? (r12 >> 4) : bg;
+
+  pixels += TEXT_PADDING_PX;
+  for (uint32_t group = 0; group < 10; ++group)
+  {
+    const uint8_t bits = vram[colors & (~0x1FFu | (row * 10 + group))];
+    for (uint32_t i = 0; i < 8; ++i)
+    {
+      if (!(bits & (0x80 >> i))) continue;
+      const uint32_t c   = group * 8 + i;
+      const uint8_t patt = pattern[names[c] * 8];
+      uint8_t* dest      = pixels + c * 3;
+      for (uint32_t b = 0; b < 3; ++b)
+      {
+        const uint8_t hi = (patt & (0x80 >> (2 * b))) ? fg : bg;
+        const uint8_t lo = (patt & (0x40 >> (2 * b))) ? fg : bg;
+        dest[b]          = (uint8_t)((hi << 4) | lo);
+      }
+    }
+  }
+}
+
 static inline uint16_t rgb12FromGrb332(uint8_t c)
 {
   const uint16_t g = PICO9918_RGB333_CH(c >> 5), r = PICO9918_RGB333_CH((c >> 2) & 7);

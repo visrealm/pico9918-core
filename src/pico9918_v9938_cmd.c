@@ -172,7 +172,7 @@ static inline bool lineUnit(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
   return !(c->anx++ == c->nx || (c->adx & ppl));
 }
 
-static bool __time_critical_func(unit)(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
+static bool PICO9918_IN_FLASH_FUNC(unit)(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
 {
   const bool mxs = c->arg & ARG_MXS, mxd = c->arg & ARG_MXD;
 
@@ -349,8 +349,9 @@ void __time_critical_func(pico9918_v9938_cmd_status_read)(PICO9918_INST_ARG uint
   transferEvent(PICO9918_INST c);
 }
 
+/* TRAP: in flash, so only the core and thread that write flash may call this - core 0's GPU loop on the board */
 PICO9918_DLLEXPORT
-bool pico9918_cmd_step(PICO9918_INST_ARG uint32_t budget)
+bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget)
 {
   pico9918_v9938_cmd_t* const c = &tms9918->v9938.cmd;
 
@@ -361,7 +362,8 @@ bool pico9918_cmd_step(PICO9918_INST_ARG uint32_t budget)
     finish(PICO9918_INST c);
     return false;
   }
-  while (budget--)
+  /* TRAP: c->op is re-read every unit - the host bus IRQ preempts this and can STOP or replace the command */
+  while (budget-- && c->op)
   {
     if (!unit(PICO9918_INST c))
     {

@@ -108,6 +108,11 @@ void __time_critical_func(pico9918_v9938_write_reg)(PICO9918_INST_ARG uint8_t re
 
   value &= regValueMask[reg];
   if (reg == PICO9918_V9938_REG_PAL_INDEX) tms9918->v9938.palStage = 0;
+  if (reg == PICO9918_V9938_REG_BLINK_TIME)
+  {
+    tms9918->v9938.blinkOn    = (value & 0xF0) != 0;
+    tms9918->v9938.blinkCount = ((value & 0xF0) && (value & 0x0F)) ? (uint8_t)((value >> 4) * 10) : 0;
+  }
 
   TMS_REGISTER(tms9918, reg) = value;
   if (reg <= TMS_REG_1) pico9918_write_reconcile_int_impl(PICO9918_INST_ONLY);
@@ -200,6 +205,18 @@ void __time_critical_func(pico9918_v9938_status_read)(PICO9918_INST_ARG uint8_t 
   case 7:
   case 9: pico9918_v9938_cmd_status_read(PICO9918_INST reg); break;
   default: break;
+  }
+}
+
+void pico9918_v9938_frame(PICO9918_INST_ONLY_ARG)
+{
+  pico9918_v9938_t* const v = &tms9918->v9938;
+
+  if (v->blinkCount && !--v->blinkCount)
+  {
+    const uint8_t r13 = TMS_REGISTER(tms9918, PICO9918_V9938_REG_BLINK_TIME);
+    v->blinkOn ^= 1;
+    v->blinkCount = (uint8_t)((v->blinkOn ? r13 >> 4 : r13 & 0x0F) * 10);
   }
 }
 

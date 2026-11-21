@@ -382,6 +382,9 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   if (y == 0)
   {
     pico9918_set_frame_done_int_impl(PICO9918_INST false);
+#if PICO9918_V9938_BASE
+    pico9918_v9938_frame(PICO9918_INST_ONLY);
+#endif
   }
 
   PICO9918_FILL32_WAIT(PICO9918_FILL_BORDER);

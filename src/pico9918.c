@@ -168,6 +168,12 @@ PICO9918_STATIC_ASSERT(offsetof(pico9918_mem_map_t, status) == PICO9918_MAP_STAT
 static const pico9918_mode_t r1Modes[] = {TMS_MODE_GRAPHICS_I, TMS_MODE_MULTICOLOR, TMS_MODE_TEXT,
                                           TMS_MODE_GRAPHICS_I};
 
+#if PICO9918_V9938_BASE
+typedef uint32_t TableAddr;
+#else
+typedef uint16_t TableAddr;
+#endif
+
 static inline pico9918_mode_t tmsMode(pico9918_t* tms9918)
 {
 #if PICO9918_V9938_BASE
@@ -202,27 +208,35 @@ static inline bool tmsSpriteMag(pico9918_t* tms9918)
 }
 
 /** \brief name table base address */
-static inline uint16_t tmsNameTableAddr(pico9918_t* tms9918)
+static inline TableAddr tmsNameTableAddr(pico9918_t* tms9918)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918)) return (TableAddr)(TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x7f) << 10;
+#endif
   return (TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x0f) << 10;
 }
 
 /** \brief name table base address */
-static inline uint16_t tmsNameTable2Addr(pico9918_t* tms9918)
+static inline TableAddr tmsNameTable2Addr(pico9918_t* tms9918)
 {
   return (TMS_REGISTER(tms9918, PICO9918_REG_NAME_TABLE2) & 0x0f) << 10;
 }
 
 /** \brief color table base address */
-static inline uint16_t tmsColorTableAddr(pico9918_t* tms9918)
+static inline TableAddr tmsColorTableAddr(pico9918_t* tms9918)
 {
   const uint8_t mask = (pico9918_cached_mode == TMS_MODE_GRAPHICS_II) ? 0x80 : 0xff;
 
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    return ((TableAddr)TMS_REGISTER(tms9918, PICO9918_V9938_REG_COLOR_HI) << 14) |
+           ((TableAddr)(TMS_REGISTER(tms9918, TMS_REG_COLOR_TABLE) & mask) << 6);
+#endif
   return (TMS_REGISTER(tms9918, TMS_REG_COLOR_TABLE) & mask) << 6;
 }
 
 /** \brief color table base address */
-static inline uint16_t tmsColorTable2Addr(pico9918_t* tms9918)
+static inline TableAddr tmsColorTable2Addr(pico9918_t* tms9918)
 {
   const uint8_t mask = (pico9918_cached_mode == TMS_MODE_GRAPHICS_II) ? 0x80 : 0xff;
 
@@ -230,10 +244,14 @@ static inline uint16_t tmsColorTable2Addr(pico9918_t* tms9918)
 }
 
 /** \brief pattern table base address */
-static inline uint16_t tmsPatternTableAddr(pico9918_t* tms9918)
+static inline TableAddr tmsPatternTableAddr(pico9918_t* tms9918)
 {
   const uint8_t mask = (pico9918_cached_mode == TMS_MODE_GRAPHICS_II) ? 0x04 : 0x07;
 
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    return (TableAddr)(TMS_REGISTER(tms9918, TMS_REG_PATTERN_TABLE) & (mask | 0x38)) << 11;
+#endif
   return (TMS_REGISTER(tms9918, TMS_REG_PATTERN_TABLE) & mask) << 11;
 }
 
@@ -1392,7 +1410,7 @@ typedef struct
  * tiles are fetched but not which four-line block of each is shown.
  */
 static inline void tileRowAddr(PICO9918_INST_ARG const uint16_t y, const uint16_t rawY, const uint8_t colorReg,
-                               const bool gm2, const bool mcm, TileRowAddr* addr, uint16_t* colorTableAddr)
+                               const bool gm2, const bool mcm, TileRowAddr* addr, TableAddr* colorTableAddr)
 {
   uint16_t pageOffset   = 0;
   const uint8_t pattRow = mcm ? (((rawY >> 2) & 0x01) + ((rawY >> 3) & 0x03) * 2) : (y & 0x07);
@@ -1467,8 +1485,8 @@ typedef struct
   uint8_t priorityMask;
   uint8_t colorTableReg;
   bool isTile2;
-  uint16_t (*nameTableAddrFunc)(pico9918_t*);
-  uint16_t (*colorTableAddrFunc)(pico9918_t*);
+  TableAddr (*nameTableAddrFunc)(pico9918_t*);
+  TableAddr (*colorTableAddrFunc)(pico9918_t*);
 } TileLayerConfig;
 
 static const TileLayerConfig T1_CONFIG = {.vertScrollReg      = 0x1c,
@@ -1543,11 +1561,16 @@ static inline TextScroll textScroll80(PICO9918_INST_ARG const TileLayerConfig* c
 static inline void tileLayerAddr(PICO9918_INST_ARG const uint16_t rawY, const TileLayerConfig* config,
                                  const uint8_t numCols, const uint8_t nameAddrMask, const bool textMode,
                                  const bool gm2, const bool mcm, const bool attrPerPos, TileRowAddr* addr,
-                                 uint16_t* namesAddr, uint16_t* colorAddr)
+                                 TableAddr* namesAddr, TableAddr* colorAddr)
 {
   uint16_t y     = rawY;
   bool swapYPage = false;
 
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    y = (uint8_t)(rawY + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL));
+  else
+#endif
   if (TMS_REGISTER(tms9918, config->vertScrollReg))
   {
     int virtY = y + TMS_REGISTER(tms9918, config->vertScrollReg);
@@ -2154,13 +2177,19 @@ static EMITTER_NOINLINE void __time_critical_func(text_scan_line)(PICO9918_INST_
 {
   const bool wide             = pico9918_cached_mode == TMS_MODE_TEXT80;
   const uint8_t numCols       = wide ? TEXT80_NUM_COLS : TEXT_NUM_COLS;
+#if PICO9918_V9938_BASE
+  const uint8_t nameTableMask = PICO9918_V9938_ACTIVE(tms9918)                 ? 0x7c
+                                : (wide && !PICO9918_UNLOCKED(tms9918)) ? 0x0c
+                                                                         : 0x0f;
+#else
   const uint8_t nameTableMask = (wide && !PICO9918_UNLOCKED(tms9918)) ? 0x0c : 0x0f;
+#endif
 
   const bool attrPerPos =
     PICO9918_UNLOCKED(tms9918) && (TMS_REGISTER(tms9918, PICO9918_REG_ENHANCED2) & PICO9918_R50_POS_ATTR);
 
   TileRowAddr addr;
-  uint16_t rowNamesAddr, colorTableAddr;
+  TableAddr rowNamesAddr, colorTableAddr;
   tileLayerAddr(PICO9918_INST y, &T1_CONFIG, numCols, nameTableMask, true, false, false, attrPerPos, &addr,
                 &rowNamesAddr, &colorTableAddr);
 
@@ -2236,6 +2265,11 @@ static EMITTER_NOINLINE void __time_critical_func(text_scan_line)(PICO9918_INST_
       }
     }
   }
+
+#if PICO9918_V9938_BASE
+  if (wide && PICO9918_V9938_ACTIVE(tms9918) && tms9918->v9938.blinkOn)
+    pico9918_v9938_text2_blink(PICO9918_INST y, (uint8_t*)border);
+#endif
 
   border[0] = border[1] = bg;
   border[62] = border[63] = bg;
@@ -2413,7 +2447,7 @@ static inline void lockedFgBg(PICO9918_INST_ARG uint32_t fgbg[2], const uint8_t 
 
 /** \brief generate a locked (plain TMS9918) tile row, straight into the scanline */
 PICO9918_INLINE_HOT void
-renderTileRowLocked(PICO9918_INST_ARG uint16_t rowNamesAddr, uint16_t colorTableAddr, uint8_t tileIndex,
+renderTileRowLocked(PICO9918_INST_ARG TableAddr rowNamesAddr, TableAddr colorTableAddr, uint8_t tileIndex,
                     uint8_t pal, uint8_t pixels[TMS9918_PIXELS_X], const TileRowAddr* addr, const bool gm2,
                     const bool mcm)
 {
@@ -2470,7 +2504,7 @@ renderTileRowLocked(PICO9918_INST_ARG uint16_t rowNamesAddr, uint16_t colorTable
 }
 
 #define LOCKED_ROW_CLONE(name, g, m) \
-  static void __time_critical_func(name)(PICO9918_INST_ARG uint16_t rowNamesAddr, uint16_t colorTableAddr, \
+  static void __time_critical_func(name)(PICO9918_INST_ARG TableAddr rowNamesAddr, TableAddr colorTableAddr, \
                                          uint8_t tileIndex, uint8_t pal, uint8_t pixels[TMS9918_PIXELS_X], \
                                          const TileRowAddr* addr) \
   { \
@@ -2609,7 +2643,7 @@ PICO9918_INLINE_HOT void f18a_tile_layer_scan_line(PICO9918_INST_ARG uint16_t y,
     (text || ecm) && (TMS_REGISTER(tms9918, PICO9918_REG_ENHANCED2) & PICO9918_R50_POS_ATTR);
 
   TileRowAddr addr;
-  uint16_t rowNamesAddr, colorTableAddr;
+  TableAddr rowNamesAddr, colorTableAddr;
   tileLayerAddr(PICO9918_INST y, config, text ? textCols : GRAPHICS_NUM_COLS, 0x0f, text, gm2, mcm, attrPerPos,
                 &addr, &rowNamesAddr, &colorTableAddr);
 
@@ -3333,17 +3367,23 @@ static uint8_t __time_critical_func(graphics_i_scan_line)(PICO9918_INST_ARG uint
   }
   else
   {
-    const uint8_t tileY = y >> 3; /* which name table row (0 - 23)... or 29 */
+#if PICO9918_V9938_BASE
+    const uint16_t sy = PICO9918_V9938_ACTIVE(tms9918)
+                          ? (uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) : y;
+#else
+    const uint16_t sy = y;
+#endif
+    const uint8_t tileY = sy >> 3; /* which name table row (0 - 23)... or 29 */
 
     /* address in name table at the start of this row */
     const uint16_t rowOffset = tileY * GRAPHICS_NUM_COLS;
-    uint16_t rowNamesAddr    = tmsNameTableAddr(tms9918) + rowOffset;
-    uint16_t colorTableAddr  = tmsColorTableAddr(tms9918);
+    TableAddr rowNamesAddr   = tmsNameTableAddr(tms9918) + rowOffset;
+    TableAddr colorTableAddr = tmsColorTableAddr(tms9918);
 
     const bool gm2 = pico9918_cached_mode == TMS_MODE_GRAPHICS_II;
     const bool mcm = pico9918_cached_mode == TMS_MODE_MULTICOLOR;
     TileRowAddr addr;
-    tileRowAddr(PICO9918_INST y, y, TMS_REGISTER(tms9918, TMS_REG_COLOR_TABLE), gm2, mcm, &addr,
+    tileRowAddr(PICO9918_INST sy, y, TMS_REGISTER(tms9918, TMS_REG_COLOR_TABLE), gm2, mcm, &addr,
                 &colorTableAddr);
 
     PICO9918_FILL32_WAIT(PICO9918_FILL_LINE);

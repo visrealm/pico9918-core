@@ -570,6 +570,10 @@ void pico9918_gpu_step(PICO9918_INST_ONLY_ARG)
   }
   reportedBack = true;
 
+#if PICO9918_V9938_BASE
+  pico9918_cmd_step(PICO9918_INST 32);
+#endif
+
   if (tms9918->flash)
   {
     gpuFlashFire(PICO9918_INST_ONLY);

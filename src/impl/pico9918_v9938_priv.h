@@ -18,6 +18,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define PICO9918_V9938_REG_COLOR_HI   10
+#define PICO9918_V9938_REG_BLINK_COLOR 12
+#define PICO9918_V9938_REG_BLINK_TIME 13
 #define PICO9918_V9938_REG_PAL_INDEX  16
 #define PICO9918_V9938_REG_INDIRECT   17
 #define PICO9918_V9938_REG_VSCROLL    23
@@ -59,9 +62,10 @@ typedef struct
   uint8_t palLatch;
   uint8_t palStage;
   uint8_t hrToggle;
-  uint8_t pad;
+  uint8_t blinkOn;
   uint16_t collisionX; /* S#3, S#4 */
   uint16_t collisionY; /* S#5, S#6 */
+  uint8_t blinkCount;
   pico9918_v9938_cmd_t cmd;
 } pico9918_v9938_t;
 
