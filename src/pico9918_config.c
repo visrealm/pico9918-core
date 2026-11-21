@@ -263,6 +263,9 @@ void pico9918_config_apply(PICO9918_INST_ONLY_ARG)
 
 #if PICO9918_V9938_BASE
     const uint8_t wasBase = tms9918->vdpBase;
+
+    /* TRAP: the configurator writes byte 15 unlocked, and switching then resets the registers it draws with */
+    if (!PICO9918_UNLOCKED(tms9918))
 #endif
     tms9918->vdpBase = (tms9918->config[PICO9918_CONF_VDP_BASE] == PICO9918_BASE_V9938)
                          ? PICO9918_BASE_V9938
