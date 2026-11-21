@@ -46,6 +46,10 @@ IntString frameTimeStr             = {0};
 IntString renderTimePerScanlineStr = {0};
 IntString temperatureStr           = {0};
 IntString gpuPctStr                = {0};
+#if PICO9918_V9938_BASE
+static bool cmdRow;
+static uint32_t cmdProduced, cmdBusy;
+#endif
 IntString clockMhzStr              = {0};
 IntString modeStr                  = {0};
 IntString fpsStr                   = {0};
@@ -307,6 +311,13 @@ void pico9918_diag_update(PICO9918_INST_ARG uint32_t frameCount)
       uint32_t totalTime = currentTime - lastUpdateTime;
 
       float gpuPct = (pico9918_gpu_time(totalTime) / (float)totalTime) * 100.0f;
+#if PICO9918_V9938_BASE
+      const uint32_t busy = tms9918->v9938.cmd.busy, produced = tms9918->v9938.cmd.produced;
+      cmdRow                  = PICO9918_V9938_ACTIVE(tms9918);
+      if (cmdRow && produced != cmdProduced) gpuPct = (busy - cmdBusy) * 100.0f / (float)(produced - cmdProduced);
+      cmdProduced = produced;
+      cmdBusy     = busy;
+#endif
       flt2Str(gpuPct, 4, &gpuPctStr);
       pico9918_gpu_reset_time();
 
@@ -459,6 +470,13 @@ static void diagScanlineRenderTime(uint16_t row, PICO9918_PIXEL_T* pixels)
 
 static void diagGpuTime(uint16_t row, PICO9918_PIXEL_T* pixels)
 {
+#if PICO9918_V9938_BASE
+  if (cmdRow)
+  {
+    renderLeft("CMD   : ", &gpuPctStr, "%", row, pixels);
+    return;
+  }
+#endif
   renderLeft("GPU   : ", &gpuPctStr, "%", row, pixels);
 }
 

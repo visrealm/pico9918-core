@@ -395,6 +395,7 @@ bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget
   const uint32_t cost = unitCost[state][c->op - OP_SRCH];
   uint32_t credit     = produced - c->spent;
   if (credit > PICO9918_V9938_FRAME_TICKS) credit = PICO9918_V9938_FRAME_TICKS;
+  const uint32_t start = credit;
 
   bool running = true;
   while (budget-- && credit >= cost)
@@ -408,6 +409,7 @@ bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget
     }
   }
   c->spent = produced - credit;
+  c->busy += start - credit;
   return running;
 }
 

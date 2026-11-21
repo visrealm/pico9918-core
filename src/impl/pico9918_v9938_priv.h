@@ -60,6 +60,7 @@ typedef struct
   int32_t sy, dy;
   uint32_t produced; /* time credit, added each line by the renderer's core */
   uint32_t spent;    /* time credit used, by the core that steps commands */
+  uint32_t busy;     /* the part of spent that did work, for the diagnostics' CMD row */
 } pico9918_v9938_cmd_t;
 
 /* a frame of command time, in the units pico9918_v9938_cmd.c costs each unit of work in */
