@@ -21,6 +21,7 @@
 
 #if PICO9918_V9938_BASE
 
+/** \brief the display mode M1-M5 select; the TMS9918A's own modes keep their renderers */
 pico9918_mode_t pico9918_v9938_mode(PICO9918_INST_ONLY_ARG)
 {
   switch (PICO9918_V9938_MODE_BITS(tms9918))
@@ -38,21 +39,26 @@ pico9918_mode_t pico9918_v9938_mode(PICO9918_INST_ONLY_ARG)
   }
 }
 
+/** \brief 212 active lines with R#9 LN, else 192 */
 int pico9918_v9938_lines(PICO9918_INST_ONLY_ARG)
 {
   return (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE3) & PICO9918_V9938_R9_LN) ? 212 : 192;
 }
 
+/** \brief the VRAM address of bitmap line \p y, with lines 1 << \p shift bytes apart */
 static inline uint32_t lineAddr(PICO9918_INST_ARG uint32_t y, uint32_t shift)
 {
   const uint32_t vy   = (y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) & 0xFF;
   const uint32_t mask = ((uint32_t)TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) << 3) | 7;
   const uint32_t odd =
     (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE3) & PICO9918_V9938_R9_EO) ? tms9918->v9938.lineField : 1;
+
+  /* R#2's page stands unless EO shows the other on even fields, or the blink shows it */
   const uint32_t page = (odd & !tms9918->v9938.blinkOn) << 8;
   return (mask & (((shift == 8) ? 0 : 0x200) | page | vy)) << shift;
 }
 
+/** \brief G4: two 4-bit pixels a byte, colour 0 showing the backdrop \p bg */
 static void __time_critical_func(lineG4)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels, uint8_t bg)
 {
   const uint8_t* src = tms9918->vram.bytes + lineAddr(PICO9918_INST y, 7);
@@ -65,8 +71,10 @@ static void __time_critical_func(lineG4)(PICO9918_INST_ARG uint32_t y, uint8_t* 
   }
 }
 
+/** \brief G5: four 2-bit pixels a byte, two to each output byte's nibble pair */
 static void __time_critical_func(lineG5)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels, uint8_t bg)
 {
+  /* each nibble's two pixels, with colour 0 swapped for the backdrop's */
   uint8_t pair[16];
   for (int n = 0; n < 16; ++n)
   {
@@ -83,7 +91,7 @@ static void __time_critical_func(lineG5)(PICO9918_INST_ARG uint32_t y, uint8_t* 
   }
 }
 
-/* G6 and G7 are planar: the line's even bytes are in the first 64KB, its odd bytes in the second */
+/** \brief G6: two 4-bit pixels a byte, planar, so even bytes come from the first 64KB and odd from the second */
 static void __time_critical_func(lineG6)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels, uint8_t bg)
 {
   const uint32_t lin  = lineAddr(PICO9918_INST y, 8);
@@ -104,6 +112,7 @@ static void __time_critical_func(lineG6)(PICO9918_INST_ARG uint32_t y, uint8_t* 
   }
 }
 
+/** \brief the 12-bit RGB of a GRB332 byte */
 static inline uint16_t rgb12FromGrb332(uint8_t c)
 {
   const uint16_t g = PICO9918_RGB333_CH(c >> 5), r = PICO9918_RGB333_CH((c >> 2) & 7);
@@ -111,8 +120,10 @@ static inline uint16_t rgb12FromGrb332(uint8_t c)
   return (uint16_t)(r | (((g << 4) | b) << 8));
 }
 
+/** \brief G7: a GRB332 pixel a byte, planar like G6, shown through the direct LUT */
 static void __time_critical_func(lineG7)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels, uint8_t bg)
 {
+  /* colour 0 is the backdrop, so the direct LUT's entry 0 follows it */
   pico9918_palette_lut[0] = PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(rgb12FromGrb332(bg)));
 
   const uint32_t lin  = lineAddr(PICO9918_INST y, 8);
@@ -126,6 +137,7 @@ static void __time_critical_func(lineG7)(PICO9918_INST_ARG uint32_t y, uint8_t* 
   }
 }
 
+/** \brief render bitmap line \p y; with R#8 TP clear colour 0 shows R#7's backdrop */
 void __time_critical_func(pico9918_v9938_bitmap_line)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
 {
   const pico9918_mode_t mode = pico9918_cached_mode;
@@ -141,6 +153,7 @@ void __time_critical_func(pico9918_v9938_bitmap_line)(PICO9918_INST_ARG uint32_t
   }
 }
 
+/** \brief overdraw TEXT2 line \p y in R#12's colours wherever the blink table selects a character */
 void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
 {
   const uint8_t* const r    = &TMS_REGISTER(tms9918, 0);
@@ -158,6 +171,7 @@ void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t
   pixels += TEXT_PADDING_PX;
   for (uint32_t group = 0; group < 10; ++group)
   {
+    /* a bit per character, ten bytes to a row */
     const uint8_t bits = vram[colors & (~0x1FFu | (row * 10 + group))];
     for (uint32_t i = 0; i < 8; ++i)
     {
@@ -165,6 +179,8 @@ void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t
       const uint32_t c   = group * 8 + i;
       const uint8_t patt = pattern[names[c] * 8];
       uint8_t* dest      = pixels + c * 3;
+
+      /* six pixels a character, two to an output byte */
       for (uint32_t b = 0; b < 3; ++b)
       {
         const uint8_t hi = (patt & (0x80 >> (2 * b))) ? fg : bg;
@@ -175,12 +191,14 @@ void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t
   }
 }
 
+/** \brief load the palette LUT with every GRB332 colour, for G7 */
 void pico9918_v9938_direct_lut(void)
 {
   for (int i = 0; i < 256; ++i)
     pico9918_palette_lut[i] = PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(rgb12FromGrb332((uint8_t)i)));
 }
 
+/** \brief R#7's border: GRB332 in G7, a palette entry for each half of the pair in G5, one otherwise */
 uint32_t pico9918_v9938_border(PICO9918_INST_ONLY_ARG)
 {
   const uint8_t r7 = TMS_REGISTER(tms9918, TMS_REG_FG_BG_COLOR);

@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* V9938 register numbers and the bits the base reads */
 #define PICO9918_V9938_REG_MODE2       8
 #define PICO9918_V9938_REG_MODE3       9
 #define PICO9918_V9938_REG_COLOR_HI    10
@@ -53,27 +54,36 @@ typedef struct
 {
   uint8_t status; /**< S#2's TR and BD bits */
 
-  /* TRAP: S#2's CE, its own byte so a read-modify-write of status on the other core cannot undo it */
+  /** TRAP: S#2's CE, its own byte so a read-modify-write of status on the other core cannot undo it */
   uint8_t ce;
   uint8_t color;    /**< S#7 */
   uint16_t borderX; /**< S#8, S#9 */
-  uint8_t op;
-  uint8_t logop;
-  uint8_t arg;
-  uint8_t pending;
-  uint8_t pshift;
-  uint8_t planar;
-  uint8_t cmask;
-  int8_t xstep, systep, dystep;
-  uint16_t xmask;
-  uint16_t sx, dx, nx, ny;
-  uint16_t asx, adx, anx, lines;
-  int32_t sy, dy;
+  uint8_t op;       /**< R#46's command code, 0 when idle; core 0 steps while it is set */
+  uint8_t logop;    /**< R#46's logical op */
+  uint8_t arg;      /**< R#45 */
+  uint8_t pending;  /**< a host transfer byte that arrived before its command */
+  uint8_t pshift;   /**< pixels per byte as a shift: 0 in G7, 2 in G5, else 1 */
+  uint8_t planar;   /**< 1 in G6 and G7 */
+  uint8_t cmask;    /**< a pixel's colour bits */
+  int8_t xstep;     /**< the step along X, signed by DIX */
+  int8_t systep;    /**< the source's step down each row, signed by DIY */
+  int8_t dystep;    /**< the destination's step down each row, signed by DIY */
+  uint16_t xmask;   /**< X wraps here: 255 or 511 */
+  uint16_t sx;      /**< R#32-R#33 */
+  uint16_t dx;      /**< R#36-R#37 */
+  uint16_t nx;      /**< R#40-R#41, clipped to the line */
+  uint16_t ny;      /**< R#42-R#43, counting down as rows complete */
+  uint16_t asx;     /**< the source X along this row; LINE's error term */
+  uint16_t adx;     /**< the destination X along this row */
+  uint16_t anx;     /**< dots or bytes left in this row; LINE's dot count */
+  uint16_t lines;   /**< rows left, after clipping */
+  int32_t sy;       /**< the source row */
+  int32_t dy;       /**< the destination row */
 
   /* TRAP: only the rendering core writes produced, only the stepping core spent and busy */
-  uint32_t produced;
-  uint32_t spent;
-  uint32_t busy;
+  uint32_t produced; /**< frame ticks the rendered lines have given the engine */
+  uint32_t spent;    /**< frame ticks it has used or let lapse while idle */
+  uint32_t busy;     /**< frame ticks it has used, for the diagnostics' CMD% */
 } pico9918_v9938_cmd_t;
 
 #define PICO9918_V9938_FRAME_TICKS (1u << 20)
@@ -81,20 +91,20 @@ typedef struct
 /** \brief the V9938 state the F18A has no place for */
 typedef struct
 {
-  uint8_t palLatch;
-  uint8_t palStage;
-  uint8_t hrToggle;
-  uint8_t blinkOn;
-  uint16_t collisionX; /**< S#3, S#4 */
-  uint16_t collisionY; /**< S#5, S#6 */
-  uint8_t blinkCount;
-  uint8_t blinkReload;
-  uint8_t field; /**< S#2 EO */
-  uint8_t lineField;
-  uint8_t wide;
-  uint8_t raw[7];
-  uint32_t lineCredit;
-  pico9918_v9938_cmd_t cmd;
+  uint8_t palLatch;         /**< the first byte of a palette write */
+  uint8_t palStage;         /**< 1 between a palette write's two bytes */
+  uint8_t hrToggle;         /**< S#2 HR, flipped per read */
+  uint8_t blinkOn;          /**< R#13's blink is on its on phase */
+  uint16_t collisionX;      /**< S#3, S#4 */
+  uint16_t collisionY;      /**< S#5, S#6 */
+  uint8_t blinkCount;       /**< frames to the next blink phase */
+  uint8_t blinkReload;      /**< R#13 changed; the next frame restarts the blink */
+  uint8_t field;            /**< S#2 EO */
+  uint8_t lineField;        /**< the field this frame's lines render */
+  uint8_t wide;             /**< R#0-R#6 decode at V9938 widths */
+  uint8_t raw[7];           /**< R#0-R#6 as written, while narrow */
+  uint32_t lineCredit;      /**< frame ticks each rendered line gives the command engine */
+  pico9918_v9938_cmd_t cmd; /**< the command engine */
 } pico9918_v9938_t;
 
 #endif

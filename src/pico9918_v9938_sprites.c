@@ -21,21 +21,25 @@
 
 #if PICO9918_V9938_BASE
 
+/* a Y of 216 ends the attribute table; EC, CC and IC are colour table bits */
 #define V9938_SPR_END  216
 #define V9938_SPR_LINE 8
 #define V9938_SPR_EC   0x80
 #define V9938_SPR_CC   0x40
 #define V9938_SPR_IC   0x20
 
+/** \brief G7 sprites take these fixed GRB332 colours, not the palette */
 static const uint8_t g7SpriteColor[16] = {
   0x00, 0x01, 0x0C, 0x0D, 0x60, 0x61, 0x6C, 0x6D, 0x9D, 0x03, 0x1C, 0x1F, 0xE0, 0xE3, 0xFC, 0xFF,
 };
 
+/** \brief a sprite table byte, interleaved in G6 and G7 */
 static inline uint8_t sprRead(const uint8_t* vram, uint32_t a, uint32_t planar)
 {
   return vram[((a << (planar << 4)) | (a >> planar)) & 0x1FFFF];
 }
 
+/** \brief each bit of a 16-bit pattern doubled, for MAG */
 static inline uint32_t magnify(uint32_t v)
 {
   v = (v | (v << 8)) & 0x00FF00FF;
@@ -45,13 +49,16 @@ static inline uint32_t magnify(uint32_t v)
   return v * 3;
 }
 
+/** \brief whether a sprite can collide: neither CC nor IC, and colour 0 only with TP */
 static inline bool sprCollides(uint8_t attr, bool tp)
 {
   return !(attr & (V9938_SPR_CC | V9938_SPR_IC)) && (tp || (attr & 0x0F));
 }
 
+/** \brief draw line \p y's sprites over \p pixels; returns S#0's 5S, C and sprite number */
 uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
 {
+  /* R#8 SPD turns sprites off */
   if (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_SPD) return 0;
 
   const uint8_t* const r    = &TMS_REGISTER(tms9918, 0);
@@ -78,6 +85,7 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
   uint8_t status = 0;
   uint32_t n     = 0;
 
+  /* up to eight sprites on this line; the ninth sets 5S */
   for (; n < 32; ++n)
   {
     const uint32_t a  = hi | (lo & (0x200 | (n << 2)));
@@ -93,7 +101,10 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
       break;
     }
 
+    /* both halves of the pattern in the high bits, magnified to 32 */
     row >>= mag;
+
+    /* the colour table is the 512 bytes below the attributes, a byte per row of each sprite */
     const uint8_t ca  = sprRead(vram, hi | (lo & ((n << 4) | row)), planar);
     const uint32_t pa = patterns | ((sprRead(vram, a + 2, planar) & idxMask) << 3) | row;
     uint32_t p =
@@ -107,8 +118,11 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     if (!(ca & V9938_SPR_CC) && first > count) first = count;
     ++count;
   }
+
+  /* without 5S, S#0 holds the last sprite looked at */
   if (!status) status = (uint8_t)(n > 31 ? 31 : n);
 
+  /* the leftmost overlap of two sprites that can collide sets C and S#3-S#6, until S#0 is read */
   if (count > 1 && !(TMS_STATUS(tms9918, PICO9918_SR_STATUS) & PICO9918_SR0_COLLISION))
   {
     int32_t minX = 256;
@@ -131,13 +145,17 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     if (minX < 256)
     {
       status |= PICO9918_SR0_COLLISION;
+
+      /* S#3-S#6 read offset: X + 12, and Y + 8 from the sprite line, one above the output line */
       tms9918->v9938.collisionX = (uint16_t)(minX + 12);
       tms9918->v9938.collisionY = (uint16_t)(y + 7);
     }
   }
 
+  /* a CC sprite draws only below a sprite without CC */
   if (first >= count) return status;
 
+  /* the byte a sprite pixel writes in this mode, as in the table above */
   const pico9918_mode_t mode = pico9918_cached_mode;
   uint8_t local[16];
   const uint8_t* lut = g7SpriteColor;
@@ -150,14 +168,17 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     lut = local;
   }
 
+  /* front to back, cover holding the pixels a higher sprite already drew */
   uint32_t cover[9] = {0};
   for (int i = first; i < count; ++i)
   {
     const uint8_t c = attr[i] & 0x0F;
     if (!c && !tp) continue;
 
-    int32_t x   = xs[i];
-    uint32_t p  = pat[i];
+    int32_t x  = xs[i];
+    uint32_t p = pat[i];
+
+    /* the CC sprites behind this one, a mask per colour bit they OR in */
     uint32_t m0 = 0, m1 = 0, m2 = 0, m3 = 0;
 #if defined(__GNUC__)
 #pragma GCC unroll 1
@@ -195,6 +216,7 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     const bool cc = (m0 | m1 | m2 | m3) != 0;
     while (p && x < TMS9918_PIXELS_X)
     {
+      /* skip an empty byte of pattern at a time */
       if (!(p >> 24))
       {
         p <<= 8;
