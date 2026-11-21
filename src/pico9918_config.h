@@ -48,7 +48,7 @@
  * CONFIGURATOR MENU-SENTINEL BAND: 246-255
  * -------------------------------------------------------------------------
  * The configurator uses 246-255 as menu-sentinel IDs in the SAME numeric
- * space as these config indices (CONF_MENU_OUTPUT = 246 .. CONF_MENU_EMPTY =
+ * space as these config indices (CONF_MENU_VIDEO = 246 .. CONF_MENU_EMPTY =
  * 255). The overlap at 252-255 is deliberate and already shipping. Do not
  * claim 246-251 for a real config byte without first checking the
  * configurator's sentinel list - a collision there breaks menu dispatch.
