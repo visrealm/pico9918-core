@@ -79,6 +79,10 @@
 #define PICO9918_BASE_TMS9918 0x00 /**< the TMS9918A base, which the F18A unlock extends */
 #define PICO9918_BASE_V9938   0x01 /**< the V9938 base */
 
+/** \brief PICO9918_CONF_CAPS bits. A build that lacks a capability leaves the byte as stored, so
+ *         one written by another image can read back set: offer, never rely on, what it says */
+#define PICO9918_CAP_V9938 0x01 /**< PICO9918_CONF_VDP_BASE can select the V9938 */
+
 /**
  * \brief PICO9918_CONF_PICO_MODEL values, derived from the board revision
  *
@@ -134,7 +138,9 @@ typedef enum
   PICO9918_CONF_PENDING_SCART_MODE   = 203,
   PICO9918_CONF_PENDING_CLOCK_PRESET = 204,
 
-  // 205-245: free (246-251 only after checking the configurator sentinels)
+  PICO9918_CONF_CAPS = 205, // read only: PICO9918_CAP_* bits, stamped on every load
+
+  // 206-245: free (246-251 only after checking the configurator sentinels)
 
   // commands (configurator writes 1 to trigger)
   PICO9918_CONF_SAVE_FORCED     = 252,
