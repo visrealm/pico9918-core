@@ -38,14 +38,20 @@
 typedef struct
 {
   uint8_t status;   /* S#2's TR, BD and CE bits */
-  uint8_t color;    /* S#7 */
+  uint8_t color;    /* S#7, and the CLR every command uses */
   uint16_t borderX; /* S#8, S#9 */
   uint8_t op;       /* the command running, CMD's high nibble, 0 when idle */
   uint8_t logop;
-  uint16_t sx, sy, dx, dy, nx, ny;
-  uint16_t ax, ay;  /* where the command has got to */
-  uint16_t asx, adx, anx;
-  int32_t err;
+  uint8_t arg;
+  uint8_t pending; /* a CLR write or S#7 read no transfer has consumed yet */
+  uint8_t pshift;
+  uint8_t planar;
+  uint8_t cmask;
+  int8_t xstep, systep, dystep;
+  uint16_t xmask;
+  uint16_t sx, dx, nx, ny;
+  uint16_t asx, adx, anx, lines;
+  int32_t sy, dy;
 } pico9918_v9938_cmd_t;
 
 typedef struct

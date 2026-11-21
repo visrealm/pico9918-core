@@ -191,6 +191,12 @@ if (PICO9918_CONFIG_TEST)
   add_subdirectory(test/config)
 endif()
 
+# The V9938 command engine, driven through the host ports. Meaningless without the base.
+option(PICO9918_V9938CMD_TEST "Build the V9938 command engine test" OFF)
+if (PICO9918_V9938CMD_TEST AND PICO9918_V9938_BASE)
+  add_subdirectory(test/v9938cmd)
+endif()
+
 # The GPU rate the library paces itself from, and the arming write it runs a program on.
 if (PICO9918_GPU_TEST)
   add_subdirectory(test/gpu)
