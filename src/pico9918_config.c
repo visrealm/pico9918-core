@@ -241,13 +241,18 @@ void pico9918_config_apply(PICO9918_INST_ONLY_ARG)
 
       TMS_REGISTER(tms9918, PICO9918_REG_MAX_SCAN_SPRITES) = pico9918_scan_sprite_limit(tms9918);
 
-      for (int i = 0; i < 16; ++i)
+#if PICO9918_V9938_BASE
+      if (tms9918->config[PICO9918_CONF_VDP_BASE] != PICO9918_BASE_V9938)
+#endif
       {
-        uint16_t rgb = (tms9918->config[PICO9918_CONF_PALETTE_IDX_0 + (i * 2)] << 8) |
-                       tms9918->config[PICO9918_CONF_PALETTE_IDX_0 + (i * 2) + 1];
-        PICO9918_PRAM(tms9918)[i] = __builtin_bswap16(rgb);
+        for (int i = 0; i < 16; ++i)
+        {
+          uint16_t rgb = (tms9918->config[PICO9918_CONF_PALETTE_IDX_0 + (i * 2)] << 8) |
+                         tms9918->config[PICO9918_CONF_PALETTE_IDX_0 + (i * 2) + 1];
+          PICO9918_PRAM(tms9918)[i] = __builtin_bswap16(rgb);
+        }
+        tms9918->palDirty = 1;
       }
-      tms9918->palDirty = 1;
     }
 
 #if PICO9918_V9938_BASE

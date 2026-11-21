@@ -184,6 +184,10 @@ uint32_t pico9918_v9938_border(PICO9918_INST_ONLY_ARG)
   if (pico9918_cached_mode == TMS_MODE_V9938_G7)
     return PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(rgb12FromGrb332(r7)));
 
+  if (pico9918_cached_mode == TMS_MODE_V9938_G5)
+    return (uint32_t)PICO9918_PIXEL_FROM_RGB12(PICO9918_PRAM(tms9918)[(r7 >> 2) & 3]) |
+           ((uint32_t)PICO9918_PIXEL_FROM_RGB12(PICO9918_PRAM(tms9918)[r7 & 3]) << 16);
+
   return PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(PICO9918_PRAM(tms9918)[r7 & 0x0F]));
 }
 
