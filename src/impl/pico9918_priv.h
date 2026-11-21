@@ -559,6 +559,9 @@ void pico9918_write_reg_value_impl(PICO9918_INST_ARG uint8_t regSelect, uint8_t 
 #if PICO9918_V9938_BASE
 /* the V9938 answers the ports while it is the base and the F18A is locked */
 #define PICO9918_V9938_ACTIVE(T) ((T)->vdpBase == PICO9918_BASE_V9938 && !PICO9918_UNLOCKED(T))
+#define PICO9918_V9938_IL_EO(T)  ((TMS_REGISTER(T, 9) & 0x0C) == 0x0C)
+#define PICO9918_DOUBLE_ROWS(T) \
+  (PICO9918_V9938_ACTIVE(T) ? PICO9918_V9938_IL_EO(T) : (TMS_REGISTER(T, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) != 0)
 
 void pico9918_v9938_write_ctrl(PICO9918_INST_ARG uint8_t data);
 void pico9918_v9938_write_data(PICO9918_INST_ARG uint8_t data);
@@ -1106,7 +1109,7 @@ PICO9918_INLINE uint16_t pico9918_frame_map_line_impl(PICO9918_INST_ARG uint16_t
 {
   uint16_t tmsY = y;
 #if PICO9918_V9938_BASE
-  if (interlaced && (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) && !PICO9918_V9938_ACTIVE(tms9918))
+  if (interlaced && PICO9918_DOUBLE_ROWS(tms9918))
 #else
   if (interlaced && (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS))
 #endif

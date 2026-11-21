@@ -67,6 +67,8 @@ typedef struct
   uint16_t collisionX; /* S#3, S#4 */
   uint16_t collisionY; /* S#5, S#6 */
   uint8_t blinkCount;
+  uint8_t field;     /* S#2 EO: the field this frame is */
+  uint8_t lineField; /* the field the line being rendered belongs to */
   pico9918_v9938_cmd_t cmd;
 } pico9918_v9938_t;
 

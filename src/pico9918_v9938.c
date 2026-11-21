@@ -180,6 +180,7 @@ uint8_t __time_critical_func(pico9918_v9938_status_peek)(PICO9918_INST_ARG uint8
     uint8_t s = (uint8_t)(0x0C | v->cmd.status);
     if (PICO9918_SCANLINE(tms9918) >= pico9918_v_pixels_impl(PICO9918_INST_ONLY)) s |= PICO9918_V9938_S2_VR;
     if (v->hrToggle) s |= PICO9918_V9938_S2_HR;
+    if (v->field) s |= PICO9918_V9938_S2_EO;
     return s;
   }
   case 3: return (uint8_t)v->collisionX;
@@ -212,6 +213,7 @@ void pico9918_v9938_frame(PICO9918_INST_ONLY_ARG)
 {
   pico9918_v9938_t* const v = &tms9918->v9938;
 
+  v->field ^= 1;
   if (v->blinkCount && !--v->blinkCount)
   {
     const uint8_t r13 = TMS_REGISTER(tms9918, PICO9918_V9938_REG_BLINK_TIME);

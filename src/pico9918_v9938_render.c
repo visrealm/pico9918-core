@@ -49,7 +49,9 @@ static inline uint32_t lineAddr(PICO9918_INST_ARG uint32_t y, uint32_t shift)
 {
   const uint32_t vy   = (y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) & 0xFF;
   const uint32_t mask = ((uint32_t)TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) << 3) | 7;
-  return (mask & (((shift == 8) ? 0x100 : 0x300) | vy)) << shift;
+  const uint32_t odd  = (TMS_REGISTER(tms9918, 9) & 0x04) ? tms9918->v9938.lineField : 1;
+  const uint32_t page = (odd & !tms9918->v9938.blinkOn) << 8;
+  return (mask & (((shift == 8) ? 0 : 0x200) | page | vy)) << shift;
 }
 
 static void __time_critical_func(lineG4)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels, uint8_t bg)

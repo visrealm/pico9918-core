@@ -3434,6 +3434,15 @@ PICO9918_DLLEXPORT uint8_t __time_critical_func(pico9918_scan_line)(PICO9918_INS
 
   if (!lookupsReady) initLookups();
 
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    const bool split               = PICO9918_V9938_IL_EO(tms9918);
+    tms9918->v9938.lineField = split ? (uint8_t)(y & 1) : tms9918->v9938.field;
+    y >>= split;
+  }
+#endif
+
   pico9918_mode_t currentCachedMode = tmsMode(tms9918);
   if (currentCachedMode != pico9918_cached_mode)
   {

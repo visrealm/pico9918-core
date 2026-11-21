@@ -230,7 +230,7 @@ pico9918_frame_geometry_t pico9918_frame_geometry(PICO9918_INST_ARG pico9918_fra
   if (yScale > 1)
   {
 #if PICO9918_V9938_BASE
-    bool doubleRows = (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) && !PICO9918_V9938_ACTIVE(tms9918);
+    bool doubleRows = PICO9918_DOUBLE_ROWS(tms9918);
 #else
     bool doubleRows         = TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS;
 #endif
@@ -247,7 +247,8 @@ pico9918_frame_geometry_t pico9918_frame_geometry(PICO9918_INST_ARG pico9918_fra
   if (yScale > 1 && (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS)) pico9918_v_pixels <<= 1;
 #if PICO9918_V9938_BASE
   /* TRAP: R0 bit 3 is M5 on the V9938, not the PICO9918's double rows */
-  if (PICO9918_V9938_ACTIVE(tms9918)) pico9918_v_pixels = pico9918_v9938_lines(PICO9918_INST_ONLY);
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    pico9918_v_pixels = pico9918_v9938_lines(PICO9918_INST_ONLY) << (yScale > 1 && PICO9918_V9938_IL_EO(tms9918));
 #endif
   pico9918_v_border = (display->vVirtualPixels - pico9918_v_pixels) / 2;
 
@@ -474,7 +475,8 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   if (PICO9918_V9938_ACTIVE(tms9918))
   {
     if ((uint8_t)(TMS_REGISTER(tms9918, PICO9918_REG_HORZ_INT_LINE) -
-                  TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) == PICO9918_SCANLINE(tms9918))
+                  TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) ==
+        (PICO9918_SCANLINE(tms9918) >> PICO9918_V9938_IL_EO(tms9918)))
       TMS_STATUS(tms9918, PICO9918_SR_IDENT) |= PICO9918_SR1_HF;
     else if (!(TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_INT_SCANLINE))
       TMS_STATUS(tms9918, PICO9918_SR_IDENT) &= (uint8_t)~PICO9918_SR1_HF;
