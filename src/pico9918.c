@@ -2196,7 +2196,7 @@ static EMITTER_NOINLINE void __time_critical_func(text_scan_line)(PICO9918_INST_
   const bool wide             = pico9918_cached_mode == TMS_MODE_TEXT80;
   const uint8_t numCols       = wide ? TEXT80_NUM_COLS : TEXT_NUM_COLS;
 #if PICO9918_V9938_BASE
-  const uint8_t nameTableMask = PICO9918_V9938_ACTIVE(tms9918)                 ? 0x7c
+  const uint8_t nameTableMask = PICO9918_V9938_ACTIVE(tms9918)               ? (wide ? 0x7c : 0x7f)
                                 : (wide && !PICO9918_UNLOCKED(tms9918)) ? 0x0c
                                                                          : 0x0f;
 #else
