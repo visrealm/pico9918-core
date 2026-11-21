@@ -23,6 +23,7 @@
 #define PICO9918_V9938_REG_BLINK_TIME 13
 #define PICO9918_V9938_REG_PAL_INDEX  16
 #define PICO9918_V9938_REG_INDIRECT   17
+#define PICO9918_V9938_REG_ADJUST     18
 #define PICO9918_V9938_REG_VSCROLL    23
 #define PICO9918_V9938_REG_ARG        45
 #define PICO9918_V9938_REG_CMD        46
@@ -57,7 +58,12 @@ typedef struct
   uint16_t sx, dx, nx, ny;
   uint16_t asx, adx, anx, lines;
   int32_t sy, dy;
+  uint32_t produced; /* time credit, added each line by the renderer's core */
+  uint32_t spent;    /* time credit used, by the core that steps commands */
 } pico9918_v9938_cmd_t;
+
+/* a frame of command time, in the units pico9918_v9938_cmd.c costs each unit of work in */
+#define PICO9918_V9938_FRAME_TICKS (1u << 20)
 
 typedef struct
 {
@@ -73,6 +79,7 @@ typedef struct
   uint8_t lineField; /* the field the line being rendered belongs to */
   uint8_t wide;      /* the host has used a V9938 register, so R#0-R#6 decode at the V9938's widths */
   uint8_t raw[7];    /* R#0-R#6 as written while they decode at the TMS9918A's widths */
+  uint32_t lineCredit;
   pico9918_v9938_cmd_t cmd;
 } pico9918_v9938_t;
 

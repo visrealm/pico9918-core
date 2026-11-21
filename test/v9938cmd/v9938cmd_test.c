@@ -72,6 +72,12 @@ static void reg(uint8_t r, uint8_t v)
   pico9918_write_port(PICO9918_INST 1, (uint8_t)(0x80 | r));
 }
 
+static bool step(uint32_t budget)
+{
+  tms9918->v9938.cmd.produced = tms9918->v9938.cmd.spent + PICO9918_V9938_FRAME_TICKS;
+  return pico9918_cmd_step(PICO9918_INST budget);
+}
+
 static uint8_t status(uint8_t s)
 {
   reg(15, s);
@@ -99,7 +105,7 @@ static void setup(unsigned sx, unsigned sy, unsigned dx, unsigned dy, unsigned n
 static void run(void)
 {
   unsigned guard = 0;
-  while (pico9918_cmd_step(PICO9918_INST 7))
+  while (step(7))
   {
     if (++guard > 1000000)
     {
@@ -639,10 +645,10 @@ static void control(void)
 
   setup(0, 0, 0, 0, 0, 0, 0x11, 0, HMMV);
   check("HMMV running", CE, s2() & CE);
-  pico9918_cmd_step(PICO9918_INST 300);
+  step(300);
   reg(46, 0);
   check("STOP CE", 0, s2() & CE);
-  check("STOP step", 0, pico9918_cmd_step(PICO9918_INST 1));
+  check("STOP step", 0, step(1));
   check("STOP wrote", 0x11, V(128 + 127));
   check("STOP stopped", 0, V(3 * 128));
   check("STOP DY", 2, regPair(38));
@@ -654,7 +660,7 @@ static void control(void)
 
   setup(0, 0, 0, 0, 2, 2, 0x55, 0, HMMC);
   check("HMMC wait", 0x55, V(0));
-  check("HMMC step waits", 1, pico9918_cmd_step(PICO9918_INST 100));
+  check("HMMC step waits", 1, step(100));
   check("HMMC no extra", 0x11, V(128));
   reg(46, 0);
 
@@ -663,13 +669,13 @@ static void control(void)
   reg(1, 0x50);
   setup(0, 0, 0, 0, 2, 1, 0x77, 0, HMMV);
   check("text CE", 0, s2() & CE);
-  pico9918_cmd_step(PICO9918_INST 100);
+  step(100);
   check("text no write", 0, V(0));
 
   setMode(&MODES[0]);
   setup(0, 0, 0, 0, 0, 4, 0x77, 0, HMMV);
   reg(0, 0x00);
-  check("mode change aborts", 0, pico9918_cmd_step(PICO9918_INST 100));
+  check("mode change aborts", 0, step(100));
   check("mode change CE", 0, s2() & CE);
 }
 

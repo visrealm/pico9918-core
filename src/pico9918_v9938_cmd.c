@@ -48,6 +48,14 @@ enum
 
 #define IS_TRANSFER(OP) ((0x8C00u >> (OP)) & 1)
 
+/* frame ticks per byte for H commands, per dot for the rest, blanked, without and with sprites
+ * SRCH LINE LMMV LMMM LMCM LMMC HMMV HMMM YMMM */
+static const uint16_t unitCost[3][9] = {
+  {295, 369, 295, 390, 0, 0, 149, 278, 205},
+  {352, 440, 352, 400, 0, 0, 178, 290, 217},
+  {390, 488, 390, 537, 0, 0, 186, 377, 331},
+};
+
 /* R#0's M5 M4 M3 for G4, G5, G6 and G7, with R#1's M1 and M2 clear */
 static inline uint8_t bitmapMode(PICO9918_INST_ONLY_ARG)
 {
@@ -367,22 +375,40 @@ bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget
 {
   pico9918_v9938_cmd_t* const c = &tms9918->v9938.cmd;
 
-  if (!c->op) return false;
+  const uint32_t produced = c->produced;
+
+  if (!c->op)
+  {
+    c->spent = produced;
+    return false;
+  }
   if (IS_TRANSFER(c->op)) return true;
   if (!bitmapMode(PICO9918_INST_ONLY))
   {
     finish(PICO9918_INST c);
     return false;
   }
-  while (budget--)
+
+  const uint8_t state = !(TMS_REGISTER(tms9918, TMS_REG_1) & 0x40)                          ? 0
+                        : (TMS_REGISTER(tms9918, 8) & PICO9918_V9938_R8_SPD) ? 1
+                                                                             : 2;
+  const uint32_t cost = unitCost[state][c->op - OP_SRCH];
+  uint32_t credit     = produced - c->spent;
+  if (credit > PICO9918_V9938_FRAME_TICKS) credit = PICO9918_V9938_FRAME_TICKS;
+
+  bool running = true;
+  while (budget-- && credit >= cost)
   {
+    credit -= cost;
     if (!unit(PICO9918_INST c))
     {
       finish(PICO9918_INST c);
-      return false;
+      running = false;
+      break;
     }
   }
-  return true;
+  c->spent = produced - credit;
+  return running;
 }
 
 #endif

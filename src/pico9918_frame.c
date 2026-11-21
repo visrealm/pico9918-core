@@ -385,8 +385,12 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
     pico9918_set_frame_done_int_impl(PICO9918_INST false);
 #if PICO9918_V9938_BASE
     pico9918_v9938_frame(PICO9918_INST_ONLY);
+    tms9918->v9938.lineCredit = PICO9918_V9938_FRAME_TICKS / params->vVirtualPixels;
 #endif
   }
+#if PICO9918_V9938_BASE
+  tms9918->v9938.cmd.produced += tms9918->v9938.lineCredit;
+#endif
 
   PICO9918_FILL32_WAIT(PICO9918_FILL_BORDER);
 
@@ -448,8 +452,14 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   PICO9918_SCANLINE(tms9918) = y;
   TMS_STATUS(tms9918, PICO9918_SR_RASTER_LINE) = y;
 
+  uint32_t leftBorder = halfHBorder;
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918) && halfHBorder >= 8)
+    leftBorder += ((TMS_REGISTER(tms9918, PICO9918_V9938_REG_ADJUST) & 0x0F) ^ 7) - 7;
+#endif
+
   /*** left border ***/
-  PICO9918_FILL32_SET_COUNT(PICO9918_FILL_BORDER, halfHBorder);
+  PICO9918_FILL32_SET_COUNT(PICO9918_FILL_BORDER, leftBorder);
   PICO9918_FILL32_TRIGGER(PICO9918_FILL_BORDER, dPixels);
 
   /*** main display region ***/
@@ -503,13 +513,16 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   // convert all pixel data from color index to the host pixel format
 #if PICO9918_TEXT80_8BPP
   if (lineBytes != TMS9918_PIXELS_X)
-    PICO9918_EXPAND_INDEXED_WIDE(dPixels + halfHBorder, lineSource, lineBytes, pico9918_palette_lut);
+    PICO9918_EXPAND_INDEXED_WIDE(dPixels + leftBorder, lineSource, lineBytes, pico9918_palette_lut);
   else
 #endif
-    PICO9918_EXPAND_INDEXED(dPixels + halfHBorder, lineSource, TMS9918_PIXELS_X, pico9918_palette_lut);
+    PICO9918_EXPAND_INDEXED(dPixels + leftBorder, lineSource, TMS9918_PIXELS_X, pico9918_palette_lut);
 
   // right border
-  PICO9918_FILL32_TRIGGER(PICO9918_FILL_BORDER, dPixels + halfHBorder + TMS9918_PIXELS_X);
+#if PICO9918_V9938_BASE
+  PICO9918_FILL32_SET_COUNT(PICO9918_FILL_BORDER, 2 * halfHBorder - leftBorder);
+#endif
+  PICO9918_FILL32_TRIGGER(PICO9918_FILL_BORDER, dPixels + leftBorder + TMS9918_PIXELS_X);
 
   if (tms9918->config[PICO9918_CONF_DIAG] && PICO9918_HAS(tms9918, PICO9918_FEAT_OVERLAY))
   {
