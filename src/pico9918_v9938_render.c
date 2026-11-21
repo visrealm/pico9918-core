@@ -105,8 +105,17 @@ static void __time_critical_func(lineG6)(PICO9918_INST_ARG uint32_t y, uint8_t* 
   }
 }
 
-static void __time_critical_func(lineG7)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
+static inline uint16_t rgb12FromGrb332(uint8_t c)
 {
+  const uint16_t g = PICO9918_RGB333_CH(c >> 5), r = PICO9918_RGB333_CH((c >> 2) & 7);
+  const uint16_t b = (uint16_t)((c & 3) * 5);
+  return (uint16_t)(r | (((g << 4) | b) << 8));
+}
+
+static void __time_critical_func(lineG7)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels, uint8_t bg)
+{
+  pico9918_palette_lut[0] = PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(rgb12FromGrb332(bg)));
+
   const uint32_t lin  = lineAddr(PICO9918_INST y, 8);
   const uint8_t* even = tms9918->vram.bytes + (lin >> 1);
   const uint8_t* odd  = even + 0x10000;
@@ -129,7 +138,7 @@ void __time_critical_func(pico9918_v9938_bitmap_line)(PICO9918_INST_ARG uint32_t
   case TMS_MODE_V9938_G4: lineG4(PICO9918_INST y, pixels, transparent ? (r7 & 0x0F) : 0); break;
   case TMS_MODE_V9938_G5: lineG5(PICO9918_INST y, pixels, transparent ? (r7 & 0x0F) : 0); break;
   case TMS_MODE_V9938_G6: lineG6(PICO9918_INST y, pixels, transparent ? (r7 & 0x0F) : 0); break;
-  default: lineG7(PICO9918_INST y, pixels); break;
+  default: lineG7(PICO9918_INST y, pixels, transparent ? r7 : 0); break;
   }
 }
 
@@ -164,13 +173,6 @@ void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t
       }
     }
   }
-}
-
-static inline uint16_t rgb12FromGrb332(uint8_t c)
-{
-  const uint16_t g = PICO9918_RGB333_CH(c >> 5), r = PICO9918_RGB333_CH((c >> 2) & 7);
-  const uint16_t b = (uint16_t)((c & 3) * 5);
-  return (uint16_t)(r | (((g << 4) | b) << 8));
 }
 
 void pico9918_v9938_direct_lut(void)
