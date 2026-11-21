@@ -256,14 +256,23 @@ static inline TableAddr tmsPatternTableAddr(pico9918_t* tms9918)
 }
 
 /** \brief sprite attribute table base address */
-static inline uint16_t tmsSpriteAttrTableAddr(pico9918_t* tms9918)
+static inline TableAddr tmsSpriteAttrTableAddr(pico9918_t* tms9918)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    return ((TableAddr)TMS_REGISTER(tms9918, 11) << 15) |
+           ((TableAddr)TMS_REGISTER(tms9918, TMS_REG_SPRITE_ATTR_TABLE) << 7);
+#endif
   return (TMS_REGISTER(tms9918, TMS_REG_SPRITE_ATTR_TABLE) & 0x7f) << 7;
 }
 
 /** \brief sprite pattern table base address */
-static inline uint16_t tmsSpritePatternTableAddr(pico9918_t* tms9918)
+static inline TableAddr tmsSpritePatternTableAddr(pico9918_t* tms9918)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    return (TableAddr)(TMS_REGISTER(tms9918, TMS_REG_SPRITE_PATT_TABLE) & 0x3f) << 11;
+#endif
   return (TMS_REGISTER(tms9918, TMS_REG_SPRITE_PATT_TABLE) & 0x07) << 11;
 }
 
@@ -973,8 +982,17 @@ static uint32_t __time_critical_func(collectSpriteRows)(PICO9918_INST_ARG uint16
 
   /* the wrap threshold and the row both carry the YPOS -1 offset, so the walk stays in raw YPOS */
   const int32_t realY = (TMS_REGISTER(tms9918, PICO9918_REG_ENHANCED1) & PICO9918_R49_Y_REAL) ? 0 : 1;
-  const int32_t maxY  = (row30Mode ? 0xf0 : 0xe0) - realY;
-  const int32_t yAdj  = (int32_t)y - realY;
+  int32_t maxY        = (row30Mode ? 0xf0 : 0xe0) - realY;
+  int32_t yAdj        = (int32_t)y - realY;
+
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    if (TMS_REGISTER(tms9918, 8) & PICO9918_V9938_R8_SPD) return 0;
+    yAdj = (int32_t)(uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) - 1;
+    maxY = yAdj;
+  }
+#endif
 
   uint32_t maxSprites = TMS_REGISTER(tms9918, PICO9918_REG_MAX_SPRITES);
   if (maxSprites > MAX_SPRITES) maxSprites = MAX_SPRITES;
@@ -1040,7 +1058,7 @@ static inline uint8_t __time_critical_func(renderSprites)(PICO9918_INST_ARG cons
   const uint8_t spriteIdxMask      = sprite16 ? 0xfc : 0xff;
   const uint8_t spriteColorMask    = 0x8f | unlockedMask;
   const uint8_t spriteSizePx       = spriteSize << spriteMag;
-  const uint16_t spritePatternAddr = tmsSpritePatternTableAddr(tms9918);
+  const TableAddr spritePatternAddr = tmsSpritePatternTableAddr(tms9918);
   uint32_t spritesShown            = 0;
 
   /* the sprite-number field reads zero unless a fifth sprite latches one in */
@@ -1128,7 +1146,7 @@ static inline uint8_t __time_critical_func(renderSprites)(PICO9918_INST_ARG cons
     /* sprite is visible on this line */
     uint8_t spriteColor   = (spriteAttrColor & ecmColorMask) << ecmColorOffset;
     const uint8_t pattIdx = spriteAttr[SPRITE_ATTR_NAME] & thisSpriteIdxMask;
-    uint16_t pattOffset   = spritePatternAddr + pattIdx * PATTERN_BYTES + (uint16_t)pattRow;
+    TableAddr pattOffset  = spritePatternAddr + pattIdx * PATTERN_BYTES + (uint16_t)pattRow;
 
 
     uint32_t pattMask = 0;
@@ -3398,6 +3416,10 @@ static uint8_t __time_critical_func(graphics_i_scan_line)(PICO9918_INST_ARG uint
         rowLockedGm1(PICO9918_INST rowNamesAddr, colorTableAddr, 0, 0, pixels, &addr);
     }
 
+#if PICO9918_V9938_BASE
+    if (PICO9918_V9938_ACTIVE(tms9918) && (TMS_REGISTER(tms9918, TMS_REG_0) & 0x04))
+      return pico9918_v9938_sprites(PICO9918_INST y, pixels);
+#endif
     tempStatus = pico9918_output_sprites(PICO9918_INST y, pixels);
   }
 
@@ -3482,6 +3504,7 @@ PICO9918_DLLEXPORT uint8_t __time_critical_func(pico9918_scan_line)(PICO9918_INS
     case TMS_MODE_V9938_G7:
       PICO9918_FILL32_WAIT(PICO9918_FILL_LINE);
       pico9918_v9938_bitmap_line(PICO9918_INST y, pixels);
+      tempStatus = pico9918_v9938_sprites(PICO9918_INST y, pixels);
       break;
 #endif
     }

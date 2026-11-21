@@ -197,6 +197,12 @@ if (PICO9918_V9938CMD_TEST AND PICO9918_V9938_BASE)
   add_subdirectory(test/v9938cmd)
 endif()
 
+# V9938 sprite modes 1 and 2, driven through the host ports. Meaningless without the base.
+option(PICO9918_V9938SPR_TEST "Build the V9938 sprite test" OFF)
+if (PICO9918_V9938SPR_TEST AND PICO9918_V9938_BASE)
+  add_subdirectory(test/v9938spr)
+endif()
+
 # The GPU rate the library paces itself from, and the arming write it runs a program on.
 if (PICO9918_GPU_TEST)
   add_subdirectory(test/gpu)

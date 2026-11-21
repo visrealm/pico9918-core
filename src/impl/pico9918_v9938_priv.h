@@ -28,6 +28,7 @@
 #define PICO9918_V9938_REG_CMD        46
 #define PICO9918_V9938_R45_MXC        0x40
 #define PICO9918_V9938_R17_AII        0x80
+#define PICO9918_V9938_R8_SPD         0x02
 
 /* S#2 */
 #define PICO9918_V9938_S2_TR 0x80
