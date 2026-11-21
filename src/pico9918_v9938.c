@@ -108,13 +108,9 @@ void __time_critical_func(pico9918_v9938_write_reg)(PICO9918_INST_ARG uint8_t re
 
   value &= regValueMask[reg];
   if (reg == PICO9918_V9938_REG_PAL_INDEX) tms9918->v9938.palStage = 0;
-  if (reg == PICO9918_V9938_REG_BLINK_TIME)
-  {
-    tms9918->v9938.blinkOn    = (value & 0xF0) != 0;
-    tms9918->v9938.blinkCount = ((value & 0xF0) && (value & 0x0F)) ? (uint8_t)((value >> 4) * 10) : 0;
-  }
 
   TMS_REGISTER(tms9918, reg) = value;
+  if (reg == PICO9918_V9938_REG_BLINK_TIME) tms9918->v9938.blinkReload = 1;
   if (reg <= TMS_REG_1) pico9918_write_reconcile_int_impl(PICO9918_INST_ONLY);
 }
 
@@ -214,7 +210,16 @@ void pico9918_v9938_frame(PICO9918_INST_ONLY_ARG)
   pico9918_v9938_t* const v = &tms9918->v9938;
 
   v->field ^= 1;
-  if (v->blinkCount && !--v->blinkCount)
+  if (v->blinkReload)
+  {
+    v->blinkReload = 0;
+
+    /* TRAP: R#13 is read after the flag clears, so a write racing this frame is never lost */
+    const uint8_t r13 = TMS_REGISTER(tms9918, PICO9918_V9938_REG_BLINK_TIME);
+    v->blinkOn        = (r13 & 0xF0) != 0;
+    v->blinkCount     = ((r13 & 0xF0) && (r13 & 0x0F)) ? (uint8_t)((r13 >> 4) * 10) : 0;
+  }
+  else if (v->blinkCount && !--v->blinkCount)
   {
     const uint8_t r13 = TMS_REGISTER(tms9918, PICO9918_V9938_REG_BLINK_TIME);
     v->blinkOn ^= 1;
