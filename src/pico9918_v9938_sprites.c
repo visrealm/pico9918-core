@@ -148,33 +148,69 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     lut = local;
   }
 
-  for (int i = count - 1; i >= first; --i)
+  uint32_t cover[9] = {0};
+  for (int i = first; i < count; ++i)
   {
     const uint8_t c = attr[i] & 0x0F;
     if (!c && !tp) continue;
 
     int32_t x  = xs[i];
     uint32_t p = pat[i];
+    uint32_t m0 = 0, m1 = 0, m2 = 0, m3 = 0;
+#if defined(__GNUC__)
+#pragma GCC unroll 1
+#endif
+    for (int j = i + 1; j < count && (attr[j] & V9938_SPR_CC); ++j)
+    {
+      const int32_t d = xs[j] - x;
+      if (d <= -32 || d >= 32) continue;
+      const uint32_t q  = (d >= 0) ? pat[j] >> d : pat[j] << -d;
+      const uint32_t cj = attr[j];
+      m0 |= q & -(cj & 1);
+      m1 |= q & -((cj >> 1) & 1);
+      m2 |= q & -((cj >> 2) & 1);
+      m3 |= q & -((cj >> 3) & 1);
+    }
+
     if (x < 0)
     {
       if (x <= -32) continue;
       p <<= -x;
+      m0 <<= -x;
+      m1 <<= -x;
+      m2 <<= -x;
+      m3 <<= -x;
       x = 0;
     }
 
-    for (; p && x < TMS9918_PIXELS_X; ++x, p <<= 1)
+    if (x >= TMS9918_PIXELS_X) continue;
+    const uint32_t w = (uint32_t)x >> 5, s = (uint32_t)x & 31;
+    p &= ~((cover[w] << s) | (s ? cover[w + 1] >> (32 - s) : 0));
+    if (!p) continue;
+    cover[w] |= p >> s;
+    if (s) cover[w + 1] |= p << (32 - s);
+
+    const bool cc = (m0 | m1 | m2 | m3) != 0;
+    while (p && x < TMS9918_PIXELS_X)
     {
-      if (!(p & 0x80000000u)) continue;
-      uint8_t color = c;
-#if defined(__GNUC__)
-#pragma GCC unroll 1
-#endif
-      for (int j = i + 1; j < count && (attr[j] & V9938_SPR_CC); ++j)
+      if (!(p >> 24))
       {
-        const uint32_t s = (uint32_t)(x - xs[j]);
-        if (s < 32 && (pat[j] << s) & 0x80000000u) color |= attr[j] & 0x0F;
+        p <<= 8;
+        m0 <<= 8;
+        m1 <<= 8;
+        m2 <<= 8;
+        m3 <<= 8;
+        x += 8;
+        continue;
       }
-      pixels[x] = lut[color];
+      if (p & 0x80000000u)
+        pixels[x] = cc ? lut[c | (m0 >> 31) | ((m1 >> 31) << 1) | ((m2 >> 31) << 2) | ((m3 >> 31) << 3)] : lut[c];
+      p <<= 1;
+      m0 <<= 1;
+      m1 <<= 1;
+      m2 <<= 1;
+      m3 <<= 1;
+      ++x;
     }
   }
 
