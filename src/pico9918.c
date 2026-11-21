@@ -211,7 +211,8 @@ static inline bool tmsSpriteMag(pico9918_t* tms9918)
 static inline TableAddr tmsNameTableAddr(pico9918_t* tms9918)
 {
 #if PICO9918_V9938_BASE
-  if (PICO9918_V9938_ACTIVE(tms9918)) return (TableAddr)(TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x7f) << 10;
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    return (TableAddr)(TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x7f) << 10;
 #endif
   return (TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x0f) << 10;
 }
@@ -260,7 +261,7 @@ static inline TableAddr tmsSpriteAttrTableAddr(pico9918_t* tms9918)
 {
 #if PICO9918_V9938_BASE
   if (PICO9918_V9938_ACTIVE(tms9918))
-    return ((TableAddr)TMS_REGISTER(tms9918, 11) << 15) |
+    return ((TableAddr)TMS_REGISTER(tms9918, PICO9918_V9938_REG_SPR_ATTR_HI) << 15) |
            ((TableAddr)TMS_REGISTER(tms9918, TMS_REG_SPRITE_ATTR_TABLE) << 7);
 #endif
   return (TMS_REGISTER(tms9918, TMS_REG_SPRITE_ATTR_TABLE) & 0x7f) << 7;
@@ -988,7 +989,7 @@ static uint32_t __time_critical_func(collectSpriteRows)(PICO9918_INST_ARG uint16
 #if PICO9918_V9938_BASE
   if (PICO9918_V9938_ACTIVE(tms9918))
   {
-    if (TMS_REGISTER(tms9918, 8) & PICO9918_V9938_R8_SPD) return 0;
+    if (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_SPD) return 0;
     yAdj = (int32_t)(uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) - 1;
     maxY = yAdj;
   }
@@ -2196,9 +2197,9 @@ static EMITTER_NOINLINE void __time_critical_func(text_scan_line)(PICO9918_INST_
   const bool wide             = pico9918_cached_mode == TMS_MODE_TEXT80;
   const uint8_t numCols       = wide ? TEXT80_NUM_COLS : TEXT_NUM_COLS;
 #if PICO9918_V9938_BASE
-  const uint8_t nameTableMask = PICO9918_V9938_ACTIVE(tms9918)               ? (wide ? 0x7c : 0x7f)
+  const uint8_t nameTableMask = PICO9918_V9938_ACTIVE(tms9918)          ? (wide ? 0x7c : 0x7f)
                                 : (wide && !PICO9918_UNLOCKED(tms9918)) ? 0x0c
-                                                                         : 0x0f;
+                                                                        : 0x0f;
 #else
   const uint8_t nameTableMask = (wide && !PICO9918_UNLOCKED(tms9918)) ? 0x0c : 0x0f;
 #endif
@@ -3386,8 +3387,8 @@ static uint8_t __time_critical_func(graphics_i_scan_line)(PICO9918_INST_ARG uint
   else
   {
 #if PICO9918_V9938_BASE
-    const uint16_t sy = PICO9918_V9938_ACTIVE(tms9918)
-                          ? (uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) : y;
+    const uint16_t sy =
+      PICO9918_V9938_ACTIVE(tms9918) ? (uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) : y;
 #else
     const uint16_t sy = y;
 #endif
@@ -3437,7 +3438,7 @@ PICO9918_DLLEXPORT uint8_t __time_critical_func(pico9918_scan_line)(PICO9918_INS
 #if PICO9918_V9938_BASE
   if (PICO9918_V9938_ACTIVE(tms9918))
   {
-    const bool split               = PICO9918_V9938_IL_EO(tms9918);
+    const bool split         = PICO9918_V9938_IL_EO(tms9918);
     tms9918->v9938.lineField = split ? (uint8_t)(y & 1) : tms9918->v9938.field;
     y >>= split;
   }

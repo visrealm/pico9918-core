@@ -560,10 +560,8 @@ PICO9918_DLLEXPORT
 uint8_t pico9918_read_port(PICO9918_INST_ARG uint8_t port);
 
 /**
- * \brief run the V9938 command engine for at most \p budget VRAM accesses
- *
- * Returns true while a command is still running. A board runs it from its own loop; a
- * desktop consumer can call it once per scanline or after every port access.
+ * \brief run the V9938 command engine for at most \p budget units of work, as far as the
+ *        time the rendered lines have given it allows. Returns true while a command runs
  */
 PICO9918_DLLEXPORT
 bool pico9918_cmd_step(PICO9918_INST_ARG uint32_t budget);

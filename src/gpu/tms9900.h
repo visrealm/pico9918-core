@@ -51,7 +51,6 @@ extern "C"
    build without a debugger must not carry it. src/CMakeLists.txt sets it. */
 
 #if PICO9918_V9938_BASE
-  /* one 4KB page of the data map: an operand at a lands at base[a & mask] */
   typedef struct
   {
     uint8_t* base;

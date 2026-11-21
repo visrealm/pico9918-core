@@ -20,12 +20,11 @@
 
 #if PICO9918_V9938_BASE
 
-#define V9938_R8_TP     0x20
-#define V9938_SPR_END   216
-#define V9938_SPR_LINE  8
-#define V9938_SPR_EC    0x80
-#define V9938_SPR_CC    0x40
-#define V9938_SPR_IC    0x20
+#define V9938_SPR_END  216
+#define V9938_SPR_LINE 8
+#define V9938_SPR_EC   0x80
+#define V9938_SPR_CC   0x40
+#define V9938_SPR_IC   0x20
 
 static const uint8_t g7SpriteColor[16] = {
   0x00, 0x01, 0x0C, 0x0D, 0x60, 0x61, 0x6C, 0x6D, 0x9D, 0x03, 0x1C, 0x1F, 0xE0, 0xE3, 0xFC, 0xFF,
@@ -52,23 +51,23 @@ static inline bool sprCollides(uint8_t attr, bool tp)
 
 uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
 {
-  if (TMS_REGISTER(tms9918, 8) & PICO9918_V9938_R8_SPD) return 0;
+  if (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_SPD) return 0;
 
+  const uint8_t* const r    = &TMS_REGISTER(tms9918, 0);
   const uint8_t* const vram = tms9918->vram.bytes;
-  const uint32_t planar     = (TMS_REGISTER(tms9918, TMS_REG_0) & 0x0A) == 0x0A;
-  const bool tp             = TMS_REGISTER(tms9918, 8) & V9938_R8_TP;
-  const uint8_t r1          = TMS_REGISTER(tms9918, TMS_REG_1);
-  const bool size16         = r1 & TMS_R1_SPRITE_16;
-  const uint32_t mag        = r1 & TMS_R1_SPRITE_MAG2;
+  const uint32_t planar     = (r[TMS_REG_0] & 0x0A) == 0x0A;
+  const bool tp             = r[PICO9918_V9938_REG_MODE2] & PICO9918_V9938_R8_TP;
+  const bool size16         = r[TMS_REG_1] & TMS_R1_SPRITE_16;
+  const uint32_t mag        = r[TMS_REG_1] & TMS_R1_SPRITE_MAG2;
   const uint32_t height     = (size16 ? 16u : 8u) << mag;
   const uint32_t idxMask    = size16 ? 0xFC : 0xFF;
   const uint32_t wideMask   = size16 ? 0xFFFF0000u : 0xFF000000u;
-  const uint32_t base       = ((uint32_t)TMS_REGISTER(tms9918, 11) << 15) |
-                        ((uint32_t)TMS_REGISTER(tms9918, TMS_REG_SPRITE_ATTR_TABLE) << 7) | 0x7F;
-  const uint32_t hi         = base & ~0x3FFu;
-  const uint32_t lo         = base & 0x3FF;
-  const uint32_t patterns   = (uint32_t)(TMS_REGISTER(tms9918, TMS_REG_SPRITE_PATT_TABLE) & 0x3F) << 11;
-  const uint32_t line       = (y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL) - 1) & 0xFF;
+  const uint32_t base       = ((uint32_t)r[PICO9918_V9938_REG_SPR_ATTR_HI] << 15) |
+                        ((uint32_t)r[TMS_REG_SPRITE_ATTR_TABLE] << 7) | 0x7F;
+  const uint32_t hi       = base & ~0x3FFu;
+  const uint32_t lo       = base & 0x3FF;
+  const uint32_t patterns = (uint32_t)(r[TMS_REG_SPRITE_PATT_TABLE] & 0x3F) << 11;
+  const uint32_t line     = (y + r[PICO9918_V9938_REG_VSCROLL] - 1) & 0xFF;
 
   uint32_t pat[V9938_SPR_LINE];
   int16_t xs[V9938_SPR_LINE];
@@ -80,7 +79,7 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
 
   for (; n < 32; ++n)
   {
-    const uint32_t a = hi | (lo & (0x200 | (n << 2)));
+    const uint32_t a  = hi | (lo & (0x200 | (n << 2)));
     const uint32_t sy = sprRead(vram, a, planar);
     if (sy == V9938_SPR_END) break;
 
@@ -96,7 +95,8 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     row >>= mag;
     const uint8_t ca  = sprRead(vram, hi | (lo & ((n << 4) | row)), planar);
     const uint32_t pa = patterns | ((sprRead(vram, a + 2, planar) & idxMask) << 3) | row;
-    uint32_t p        = ((uint32_t)sprRead(vram, pa, planar) << 24) | ((uint32_t)sprRead(vram, pa + 16, planar) << 16);
+    uint32_t p =
+      ((uint32_t)sprRead(vram, pa, planar) << 24) | ((uint32_t)sprRead(vram, pa + 16, planar) << 16);
     p &= wideMask;
     p = (magnify(p >> 16) & -mag) | (p & (mag - 1));
 
@@ -143,8 +143,9 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
   if (mode != TMS_MODE_V9938_G7)
   {
     for (uint32_t c = 0; c < 16; ++c)
-      local[c] = (uint8_t)((mode == TMS_MODE_V9938_G5) ? (((c >> 2) << 4) | (c & 3))
-                                                       : (mode == TMS_MODE_V9938_G6) ? c * 0x11 : c);
+      local[c] = (uint8_t)((mode == TMS_MODE_V9938_G5)   ? (((c >> 2) << 4) | (c & 3))
+                           : (mode == TMS_MODE_V9938_G6) ? c * 0x11
+                                                         : c);
     lut = local;
   }
 
@@ -154,8 +155,8 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
     const uint8_t c = attr[i] & 0x0F;
     if (!c && !tp) continue;
 
-    int32_t x  = xs[i];
-    uint32_t p = pat[i];
+    int32_t x   = xs[i];
+    uint32_t p  = pat[i];
     uint32_t m0 = 0, m1 = 0, m2 = 0, m3 = 0;
 #if defined(__GNUC__)
 #pragma GCC unroll 1
@@ -204,7 +205,8 @@ uint8_t __time_critical_func(pico9918_v9938_sprites)(PICO9918_INST_ARG uint32_t 
         continue;
       }
       if (p & 0x80000000u)
-        pixels[x] = cc ? lut[c | (m0 >> 31) | ((m1 >> 31) << 1) | ((m2 >> 31) << 2) | ((m3 >> 31) << 3)] : lut[c];
+        pixels[x] =
+          cc ? lut[c | (m0 >> 31) | ((m1 >> 31) << 1) | ((m2 >> 31) << 2) | ((m3 >> 31) << 3)] : lut[c];
       p <<= 1;
       m0 <<= 1;
       m1 <<= 1;

@@ -56,6 +56,13 @@ static const uint16_t unitCost[3][9] = {
   {390, 488, 390, 537, 0, 0, 186, 377, 331},
 };
 
+/* G4, G5, G6 and G7, by R#0's M5 M4 M3 less 3 */
+static const struct
+{
+  uint8_t pshift, planar;
+  uint16_t xmask;
+} modeShape[5] = {{1, 0, 255}, {2, 0, 511}, {1, 1, 511}, {0, 0, 0}, {0, 1, 255}};
+
 /* R#0's M5 M4 M3 for G4, G5, G6 and G7, with R#1's M1 and M2 clear */
 static inline uint8_t bitmapMode(PICO9918_INST_ONLY_ARG)
 {
@@ -97,7 +104,8 @@ static inline uint8_t point(PICO9918_INST_ARG const pico9918_v9938_cmd_t* c, uin
   return (uint8_t)((tms9918->vram.bytes[a] >> pixelShift(c, x)) & c->cmask);
 }
 
-static inline void pset(PICO9918_INST_ARG const pico9918_v9938_cmd_t* c, uint32_t x, uint32_t y, bool ext, uint8_t sc)
+static inline void pset(PICO9918_INST_ARG const pico9918_v9938_cmd_t* c, uint32_t x, uint32_t y, bool ext,
+                        uint8_t sc)
 {
   const uint32_t a = addrOf(c, x, y, ext);
   if (a == CMD_NO_ADDR || ((c->logop & 8) && !sc)) return;
@@ -123,6 +131,7 @@ static inline void finish(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
   if (c->op)
   {
     const uint16_t ny = c->ny & 0x3FF;
+
     TMS_REGISTER(tms9918, REG_SY)     = (uint8_t)c->sy;
     TMS_REGISTER(tms9918, REG_SY + 1) = (uint8_t)((c->sy >> 8) & 3);
     TMS_REGISTER(tms9918, REG_DY)     = (uint8_t)c->dy;
@@ -195,8 +204,8 @@ static bool PICO9918_IN_FLASH_FUNC(unit)(PICO9918_INST_ARG pico9918_v9938_cmd_t*
       c->status |= PICO9918_V9938_S2_BD;
       return false;
     }
-    c->asx      = (uint16_t)(c->asx + c->xstep);
-    c->borderX  = c->asx;
+    c->asx     = (uint16_t)(c->asx + c->xstep);
+    c->borderX = c->asx;
     return !(c->asx & (c->xmask + 1));
   }
   case OP_LINE: return lineUnit(PICO9918_INST c);
@@ -206,10 +215,12 @@ static bool PICO9918_IN_FLASH_FUNC(unit)(PICO9918_INST_ARG pico9918_v9938_cmd_t*
     break;
   case OP_HMMV: put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), c->color); break;
   case OP_HMMM:
-    put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), get(PICO9918_INST addrOf(c, c->asx, (uint32_t)c->sy, mxs)));
+    put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd),
+        get(PICO9918_INST addrOf(c, c->asx, (uint32_t)c->sy, mxs)));
     break;
   case OP_YMMM:
-    put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), get(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->sy, mxd)));
+    put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd),
+        get(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->sy, mxd)));
     break;
 
   /* TRAP: the host bus IRQ can STOP or replace the command mid-step, and a transfer is the IRQ's to run */
@@ -239,7 +250,8 @@ static inline uint16_t clipX(const pico9918_v9938_cmd_t* c, uint16_t a, uint16_t
   if (a >= ppl || b >= ppl) return 1;
   if (!n) n = ppl;
 
-  const uint16_t lim = (c->arg & ARG_DIX) ? (uint16_t)((a < b ? a : b) + 1) : (uint16_t)(ppl - (a > b ? a : b));
+  const uint16_t lim =
+    (c->arg & ARG_DIX) ? (uint16_t)((a < b ? a : b) + 1) : (uint16_t)(ppl - (a > b ? a : b));
   return n < lim ? n : lim;
 }
 
@@ -272,16 +284,13 @@ static void __time_critical_func(start)(PICO9918_INST_ARG pico9918_v9938_cmd_t* 
     return;
   }
 
-  switch (mode)
-  {
-  case 3: c->pshift = 1; c->planar = 0; c->xmask = 255; break;
-  case 4: c->pshift = 2; c->planar = 0; c->xmask = 511; break;
-  case 5: c->pshift = 1; c->planar = 1; c->xmask = 511; break;
-  default: c->pshift = 0; c->planar = 1; c->xmask = 255; break;
-  }
-  c->cmask = (uint8_t)(0xFF >> (8 - (8 >> c->pshift)));
+  c->pshift = modeShape[mode - 3].pshift;
+  c->planar = modeShape[mode - 3].planar;
+  c->xmask  = modeShape[mode - 3].xmask;
+  c->cmask  = (uint8_t)(0xFF >> (8 - (8 >> c->pshift)));
 
   const uint8_t* const r = &TMS_REGISTER(tms9918, REG_SX);
+
   c->sx    = (uint16_t)(r[0] | ((r[1] & 1) << 8));
   c->sy    = r[2] | ((r[3] & 3) << 8);
   c->dx    = (uint16_t)(r[4] | ((r[5] & 1) << 8));
@@ -292,6 +301,7 @@ static void __time_critical_func(start)(PICO9918_INST_ARG pico9918_v9938_cmd_t* 
   c->logop = value & 0x0F;
 
   const int8_t ystep = (c->arg & ARG_DIY) ? -1 : 1;
+
   c->xstep  = (c->arg & ARG_DIX) ? -1 : 1;
   c->systep = 0;
   c->dystep = 0;
@@ -389,9 +399,9 @@ bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget
     return false;
   }
 
-  const uint8_t state = !(TMS_REGISTER(tms9918, TMS_REG_1) & 0x40)                          ? 0
-                        : (TMS_REGISTER(tms9918, 8) & PICO9918_V9938_R8_SPD) ? 1
-                                                                             : 2;
+  const uint8_t state = !(TMS_REGISTER(tms9918, TMS_REG_1) & 0x40)                                  ? 0
+                        : (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_SPD) ? 1
+                                                                                                    : 2;
   const uint32_t cost = unitCost[state][c->op - OP_SRCH];
   uint32_t credit     = produced - c->spent;
   if (credit > PICO9918_V9938_FRAME_TICKS) credit = PICO9918_V9938_FRAME_TICKS;

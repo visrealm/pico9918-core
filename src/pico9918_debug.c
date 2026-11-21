@@ -41,7 +41,6 @@ typedef struct
 } pico9918_debug_region_t;
 
 #if PICO9918_V9938_BASE
-/* each window page mirrors its few live bytes, so a whole page shares their flags */
 static const pico9918_debug_region_t debugMap[] = {
   {MAP_AT(pram), DEBUG_RW},
   {MAP_AT(registers), DEBUG_RW | PICO9918_DEBUG_PALETTE},

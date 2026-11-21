@@ -20,9 +20,6 @@
 
 #if PICO9918_V9938_BASE
 
-#define V9938_R8_TP 0x20
-#define V9938_R9_LN 0x80
-
 pico9918_mode_t pico9918_v9938_mode(PICO9918_INST_ONLY_ARG)
 {
   switch (PICO9918_V9938_MODE_BITS(tms9918))
@@ -42,14 +39,15 @@ pico9918_mode_t pico9918_v9938_mode(PICO9918_INST_ONLY_ARG)
 
 int pico9918_v9938_lines(PICO9918_INST_ONLY_ARG)
 {
-  return (TMS_REGISTER(tms9918, 9) & V9938_R9_LN) ? 212 : 192;
+  return (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE3) & PICO9918_V9938_R9_LN) ? 212 : 192;
 }
 
 static inline uint32_t lineAddr(PICO9918_INST_ARG uint32_t y, uint32_t shift)
 {
   const uint32_t vy   = (y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) & 0xFF;
   const uint32_t mask = ((uint32_t)TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) << 3) | 7;
-  const uint32_t odd  = (TMS_REGISTER(tms9918, 9) & 0x04) ? tms9918->v9938.lineField : 1;
+  const uint32_t odd =
+    (TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE3) & PICO9918_V9938_R9_EO) ? tms9918->v9938.lineField : 1;
   const uint32_t page = (odd & !tms9918->v9938.blinkOn) << 8;
   return (mask & (((shift == 8) ? 0 : 0x200) | page | vy)) << shift;
 }
@@ -90,7 +88,7 @@ static void __time_critical_func(lineG6)(PICO9918_INST_ARG uint32_t y, uint8_t* 
   const uint32_t lin  = lineAddr(PICO9918_INST y, 8);
   const uint8_t* even = tms9918->vram.bytes + (lin >> 1);
   const uint8_t* odd  = even + 0x10000;
-  const uint8_t bgHi = (uint8_t)(bg << 4);
+  const uint8_t bgHi  = (uint8_t)(bg << 4);
 
   for (int i = 0; i < 128; ++i)
   {
@@ -130,7 +128,7 @@ static void __time_critical_func(lineG7)(PICO9918_INST_ARG uint32_t y, uint8_t* 
 void __time_critical_func(pico9918_v9938_bitmap_line)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
 {
   const pico9918_mode_t mode = pico9918_cached_mode;
-  const bool transparent     = !(TMS_REGISTER(tms9918, 8) & V9938_R8_TP);
+  const bool transparent     = !(TMS_REGISTER(tms9918, PICO9918_V9938_REG_MODE2) & PICO9918_V9938_R8_TP);
   const uint8_t r7           = TMS_REGISTER(tms9918, TMS_REG_FG_BG_COLOR);
 
   switch (mode)
@@ -144,16 +142,17 @@ void __time_critical_func(pico9918_v9938_bitmap_line)(PICO9918_INST_ARG uint32_t
 
 void __time_critical_func(pico9918_v9938_text2_blink)(PICO9918_INST_ARG uint32_t y, uint8_t* pixels)
 {
-  const uint32_t sy      = (uint8_t)(y + TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL));
-  const uint32_t row     = sy >> 3;
-  const uint8_t* vram    = tms9918->vram.bytes;
-  const uint8_t* names   = vram + ((uint32_t)(TMS_REGISTER(tms9918, TMS_REG_NAME_TABLE) & 0x7C) << 10) + row * 80;
-  const uint8_t* pattern = vram + ((uint32_t)(TMS_REGISTER(tms9918, TMS_REG_PATTERN_TABLE) & 0x3F) << 11) + (sy & 7);
-  const uint32_t colors  = ((uint32_t)TMS_REGISTER(tms9918, PICO9918_V9938_REG_COLOR_HI) << 14) |
-                          ((uint32_t)TMS_REGISTER(tms9918, TMS_REG_COLOR_TABLE) << 6) | 0x3F;
-  const uint8_t r12      = TMS_REGISTER(tms9918, PICO9918_V9938_REG_BLINK_COLOR);
-  const uint8_t bg       = r12 & 0x0F;
-  const uint8_t fg       = (r12 >> 4) ? (r12 >> 4) : bg;
+  const uint8_t* const r    = &TMS_REGISTER(tms9918, 0);
+  const uint8_t* const vram = tms9918->vram.bytes;
+  const uint32_t sy         = (uint8_t)(y + r[PICO9918_V9938_REG_VSCROLL]);
+  const uint32_t row        = sy >> 3;
+  const uint8_t* names      = vram + ((uint32_t)(r[TMS_REG_NAME_TABLE] & 0x7C) << 10) + row * 80;
+  const uint8_t* pattern    = vram + ((uint32_t)(r[TMS_REG_PATTERN_TABLE] & 0x3F) << 11) + (sy & 7);
+
+  const uint32_t colors = (r[PICO9918_V9938_REG_COLOR_HI] << 14) | (r[TMS_REG_COLOR_TABLE] << 6) | 0x3Fu;
+  const uint8_t r12     = r[PICO9918_V9938_REG_BLINK_COLOR];
+  const uint8_t bg      = r12 & 0x0F;
+  const uint8_t fg      = (r12 >> 4) ? (r12 >> 4) : bg;
 
   pixels += TEXT_PADDING_PX;
   for (uint32_t group = 0; group < 10; ++group)

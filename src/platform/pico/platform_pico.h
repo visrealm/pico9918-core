@@ -69,7 +69,6 @@
 #define PICO9918_IN_FLASH_FUNC(fn) fn
 #endif
 
-/* Orders one core's stores before a flag the other core polls: the host bus IRQs run on core 1 */
 #define PICO9918_CROSS_CORE_FENCE() __dmb()
 
 

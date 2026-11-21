@@ -248,7 +248,8 @@ pico9918_frame_geometry_t pico9918_frame_geometry(PICO9918_INST_ARG pico9918_fra
 #if PICO9918_V9938_BASE
   /* TRAP: R0 bit 3 is M5 on the V9938, not the PICO9918's double rows */
   if (PICO9918_V9938_ACTIVE(tms9918))
-    pico9918_v_pixels = pico9918_v9938_lines(PICO9918_INST_ONLY) << (yScale > 1 && PICO9918_V9938_IL_EO(tms9918));
+    pico9918_v_pixels = pico9918_v9938_lines(PICO9918_INST_ONLY)
+                        << (yScale > 1 && PICO9918_V9938_IL_EO(tms9918));
 #endif
   pico9918_v_border = (display->vVirtualPixels - pico9918_v_pixels) / 2;
 

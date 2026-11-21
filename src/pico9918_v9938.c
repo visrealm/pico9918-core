@@ -46,7 +46,8 @@ static inline uint16_t pramFromGrb(uint16_t grb)
 
 uint32_t __time_critical_func(pico9918_v9938_cpu_addr)(PICO9918_INST_ONLY_ARG)
 {
-  uint32_t a = ((uint32_t)(TMS_REGISTER(tms9918, 14) & 7) << 14) | (tms9918->currentAddress & 0x3FFF);
+  uint32_t a = ((uint32_t)(TMS_REGISTER(tms9918, PICO9918_V9938_REG_VRAM_PAGE) & 7) << 14) |
+               (tms9918->currentAddress & 0x3FFF);
 
   if ((TMS_REGISTER(tms9918, TMS_REG_0) & 0x0A) == 0x0A) a = ((a << 16) | (a >> 1)) & 0x1FFFF;
 
@@ -66,7 +67,8 @@ static inline void advance(PICO9918_INST_ONLY_ARG)
 {
   tms9918->currentAddress = (tms9918->currentAddress + 1) & 0x3FFF;
   if (tms9918->currentAddress == 0 && (TMS_REGISTER(tms9918, TMS_REG_0) & 0x0C))
-    TMS_REGISTER(tms9918, 14) = (uint8_t)((TMS_REGISTER(tms9918, 14) + 1) & 7);
+    TMS_REGISTER(tms9918, PICO9918_V9938_REG_VRAM_PAGE) =
+      (uint8_t)((TMS_REGISTER(tms9918, PICO9918_V9938_REG_VRAM_PAGE) + 1) & 7);
 }
 
 void __time_critical_func(pico9918_v9938_write_data)(PICO9918_INST_ARG uint8_t data)
@@ -165,9 +167,9 @@ void __time_critical_func(pico9918_v9938_write_palette)(PICO9918_INST_ARG uint8_
   const uint8_t index = TMS_REGISTER(tms9918, PICO9918_V9938_REG_PAL_INDEX) & 0x0F;
   const uint16_t grb  = (uint16_t)(((data & 7) << 8) | (v->palLatch & 0x77));
 
-  PICO9918_PRAM(tms9918)[index] = pramFromGrb(grb);
+  PICO9918_PRAM(tms9918)[index]                       = pramFromGrb(grb);
   TMS_REGISTER(tms9918, PICO9918_V9938_REG_PAL_INDEX) = (uint8_t)((index + 1) & 0x0F);
-  tms9918->palDirty = 1;
+  tms9918->palDirty                                   = 1;
 }
 
 void __time_critical_func(pico9918_v9938_write_indirect)(PICO9918_INST_ARG uint8_t data)
@@ -248,9 +250,9 @@ void pico9918_v9938_reset(PICO9918_INST_ONLY_ARG)
   memset(&tms9918->v9938, 0, sizeof(tms9918->v9938));
   memset(&TMS_REGISTER(tms9918, 0), 0, 24);
   memset(&TMS_REGISTER(tms9918, 32), 0, 15);
-  TMS_REGISTER(tms9918, 21) = 0x3B;
-  TMS_REGISTER(tms9918, 22) = 0x05;
-  tms9918->currentAddress   = 0;
+  TMS_REGISTER(tms9918, PICO9918_V9938_REG_BURST + 1) = 0x3B;
+  TMS_REGISTER(tms9918, PICO9918_V9938_REG_BURST + 2) = 0x05;
+  tms9918->currentAddress                             = 0;
 
   for (int i = 0; i < 16; ++i) PICO9918_PRAM(tms9918)[i] = pramFromGrb(v9938Palette[i]);
   tms9918->palDirty = 1;
@@ -273,7 +275,8 @@ uint8_t pico9918_read_port(PICO9918_INST_ARG uint8_t port)
       return 0xFF;
     }
   }
-  return (port & 1) ? pico9918_read_status_impl(PICO9918_INST_ONLY) : pico9918_read_data_impl(PICO9918_INST_ONLY);
+  return (port & 1) ? pico9918_read_status_impl(PICO9918_INST_ONLY)
+                    : pico9918_read_data_impl(PICO9918_INST_ONLY);
 }
 
 #endif

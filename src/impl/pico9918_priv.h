@@ -253,19 +253,19 @@ typedef struct
 #endif
 
 #if PICO9918_V9938_BASE
-#define TMS_REGISTER(T, R)     (T->live.registers[R])
-#define TMS_STATUS(T, R)       (T->live.status[R])
-#define PICO9918_PRAM_FIELD    live.pram
-#define PICO9918_SCANLINE(T)   ((T)->live.scanline)
-#define PICO9918_BLANKING(T)   ((T)->live.blanking)
-#define PICO9918_DMA_PORTS(T)  ((T)->live.dma)
+#define TMS_REGISTER(T, R)    (T->live.registers[R])
+#define TMS_STATUS(T, R)      (T->live.status[R])
+#define PICO9918_PRAM_FIELD   live.pram
+#define PICO9918_SCANLINE(T)  ((T)->live.scanline)
+#define PICO9918_BLANKING(T)  ((T)->live.blanking)
+#define PICO9918_DMA_PORTS(T) ((T)->live.dma)
 #else
-#define TMS_REGISTER(T, R)     (T->vram.map.registers[R])
-#define TMS_STATUS(T, R)       (T->vram.map.status[R])
-#define PICO9918_PRAM_FIELD    vram.map.pram
-#define PICO9918_SCANLINE(T)   ((T)->vram.map.scanline)
-#define PICO9918_BLANKING(T)   ((T)->vram.map.blanking)
-#define PICO9918_DMA_PORTS(T)  (&(T)->vram.bytes[0x8000])
+#define TMS_REGISTER(T, R)    (T->vram.map.registers[R])
+#define TMS_STATUS(T, R)      (T->vram.map.status[R])
+#define PICO9918_PRAM_FIELD   vram.map.pram
+#define PICO9918_SCANLINE(T)  ((T)->vram.map.scanline)
+#define PICO9918_BLANKING(T)  ((T)->vram.map.blanking)
+#define PICO9918_DMA_PORTS(T) (&(T)->vram.bytes[0x8000])
 #endif
 #define PICO9918_PRAM(T) ((T)->PICO9918_PRAM_FIELD)
 
@@ -557,9 +557,8 @@ PICO9918_INTERNAL
 void pico9918_write_reg_value_impl(PICO9918_INST_ARG uint8_t regSelect, uint8_t value);
 
 #if PICO9918_V9938_BASE
-/* the V9938 answers the ports while it is the base and the F18A is locked */
 #define PICO9918_V9938_ACTIVE(T) ((T)->vdpBase == PICO9918_BASE_V9938 && !PICO9918_UNLOCKED(T))
-#define PICO9918_V9938_IL_EO(T)  ((TMS_REGISTER(T, 9) & 0x0C) == 0x0C)
+#define PICO9918_V9938_IL_EO(T)  ((TMS_REGISTER(T, PICO9918_V9938_REG_MODE3) & 0x0C) == 0x0C)
 #define PICO9918_DOUBLE_ROWS(T) \
   (PICO9918_V9938_ACTIVE(T) ? PICO9918_V9938_IL_EO(T) : (TMS_REGISTER(T, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) != 0)
 
@@ -588,7 +587,6 @@ void pico9918_v9938_frame(PICO9918_INST_ONLY_ARG);
 void pico9918_v9938_text2_blink(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
 uint8_t pico9918_v9938_sprites(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
 
-/* the command engine: a register write, a status read with a side effect, and a slice of work */
 void pico9918_v9938_cmd_write(PICO9918_INST_ARG uint8_t reg, uint8_t value);
 void pico9918_v9938_cmd_status_read(PICO9918_INST_ARG uint8_t reg);
 #endif

@@ -31,7 +31,6 @@
 /* Nothing is copied to RAM off-target, so nothing has to be held back from it. */
 #define PICO9918_IN_FLASH_FUNC(fn) fn
 
-/* One thread drives the ports and the command step off-target */
 #define PICO9918_CROSS_CORE_FENCE() ((void)0)
 
 
