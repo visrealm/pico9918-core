@@ -673,6 +673,24 @@ static void control(void)
   check("mode change CE", 0, s2() & CE);
 }
 
+static void tiBoot(void)
+{
+  static const uint8_t console[8] = {0x00, 0x20, 0xF0, 0x0E, 0xF9, 0x86, 0xF8, 0xF7};
+
+  scope = "ti boot";
+  for (uint8_t r = 0; r < 8; ++r) reg(r, console[r]);
+  check("R#2 narrow", 0x00, TMS_REGISTER(tms9918, 2));
+  check("R#4 narrow", 0x01, TMS_REGISTER(tms9918, 4));
+  check("R#5 narrow", 0x06, TMS_REGISTER(tms9918, 5));
+  check("R#6 narrow", 0x00, TMS_REGISTER(tms9918, 6));
+
+  reg(15, 0);
+  check("R#2 wide", 0x70, TMS_REGISTER(tms9918, 2));
+  check("R#4 wide", 0x39, TMS_REGISTER(tms9918, 4));
+  check("R#5 wide", 0x86, TMS_REGISTER(tms9918, 5));
+  check("R#6 wide", 0x38, TMS_REGISTER(tms9918, 6));
+}
+
 int main(void)
 {
   pico9918_init();
@@ -684,6 +702,7 @@ int main(void)
     return 1;
   }
 
+  tiBoot();
   for (unsigned i = 0; i < 4; ++i) everyMode(&MODES[i]);
   logicalOps();
   g4Specifics();

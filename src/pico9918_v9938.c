@@ -25,6 +25,10 @@ static const uint8_t regValueMask[24] = {
   0x0F, 0xBF, 0xFF, 0xFF, 0x3F, 0x3F, 0x3F, 0xFF, /* R#16-R#23 */
 };
 
+/* TRAP: the TI-99/4A console writes R#2=F0, R#4=F9, R#5=86 and R#6=F8 at power-up; a TMS9918A
+   ignores the high bits, a V9938 puts every table above 0x1C000 */
+static const uint8_t tmsValueMask[7] = {0xFF, 0xFF, 0x0F, 0xFF, 0x07, 0x7F, 0x07};
+
 /* the data book's power-on palette, 0x0GRB at three bits a channel */
 static const uint16_t v9938Palette[16] = {
   0x000, 0x000, 0x611, 0x733, 0x117, 0x327, 0x151, 0x627,
@@ -95,6 +99,13 @@ void __time_critical_func(pico9918_v9938_write_reg)(PICO9918_INST_ARG uint8_t re
 
   tms9918->unlockCount = 0;
 
+  pico9918_v9938_t* const v = &tms9918->v9938;
+  if (!v->wide && (reg >= 8 || (reg == 0 && (value & 0x0C))))
+  {
+    v->wide = 1;
+    memcpy(&TMS_REGISTER(tms9918, 0), v->raw, sizeof(v->raw));
+  }
+
   if (reg >= 32)
   {
     if (reg < 47)
@@ -107,7 +118,12 @@ void __time_critical_func(pico9918_v9938_write_reg)(PICO9918_INST_ARG uint8_t re
   if (reg >= 24) return;
 
   value &= regValueMask[reg];
-  if (reg == PICO9918_V9938_REG_PAL_INDEX) tms9918->v9938.palStage = 0;
+  if (!v->wide && reg < sizeof(v->raw))
+  {
+    v->raw[reg] = value;
+    value &= tmsValueMask[reg];
+  }
+  if (reg == PICO9918_V9938_REG_PAL_INDEX) v->palStage = 0;
 
   TMS_REGISTER(tms9918, reg) = value;
   if (reg == PICO9918_V9938_REG_BLINK_TIME) tms9918->v9938.blinkReload = 1;

@@ -71,6 +71,8 @@ typedef struct
   uint8_t blinkReload;
   uint8_t field;     /* S#2 EO: the field this frame is */
   uint8_t lineField; /* the field the line being rendered belongs to */
+  uint8_t wide;      /* the host has used a V9938 register, so R#0-R#6 decode at the V9938's widths */
+  uint8_t raw[7];    /* R#0-R#6 as written while they decode at the TMS9918A's widths */
   pico9918_v9938_cmd_t cmd;
 } pico9918_v9938_t;
 
