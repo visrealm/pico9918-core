@@ -145,6 +145,10 @@ uint16_t pico9918_gpu_pc(PICO9918_INST_ONLY_ARG);
  * because it re-lays-out nothing when the chip personality changes, and the decoded one
  * is derivable from it.
  *
+ * A PICO9918_V9938_BASE build keeps the live state outside VRAM, so there the palette,
+ * register, scanline, DMA and status pages each mirror their few bytes across 4KB, as
+ * the PICO9918 personality's GPU sees them.
+ *
  * Not what the host data port sees either: pico9918_vram_value is the guest's view and
  * stops at 0x3FFF, so it cannot reach GRAM at 0x4000, the palette at 0x5000, the
  * register and status windows, or the workspace. Disassembly and memory views want this

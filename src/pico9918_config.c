@@ -245,7 +245,7 @@ void pico9918_config_apply(PICO9918_INST_ONLY_ARG)
       {
         uint16_t rgb = (tms9918->config[PICO9918_CONF_PALETTE_IDX_0 + (i * 2)] << 8) |
                        tms9918->config[PICO9918_CONF_PALETTE_IDX_0 + (i * 2) + 1];
-        tms9918->vram.map.pram[i] = __builtin_bswap16(rgb);
+        PICO9918_PRAM(tms9918)[i] = __builtin_bswap16(rgb);
       }
       tms9918->palDirty = 1;
     }

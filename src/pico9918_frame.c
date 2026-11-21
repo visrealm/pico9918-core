@@ -152,8 +152,8 @@ void pico9918_frame_update_interrupts(PICO9918_INST_ARG uint8_t tempStatus)
 /** \brief see the header. */
 void pico9918_frame_porch(PICO9918_INST_ONLY_ARG)
 {
-  tms9918->vram.map.blanking = 1;   // V
-  tms9918->vram.map.scanline = 255; // F18A value for vsync
+  PICO9918_BLANKING(tms9918) = 1;   // V
+  PICO9918_SCANLINE(tms9918) = 255; // F18A value for vsync
   TMS_STATUS(tms9918, PICO9918_SR_RASTER_LINE) = 255;
 }
 
@@ -362,7 +362,7 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
     pico9918_display_mode_impl(PICO9918_INST_ONLY) == TMS_MODE_TEXT80 && lineBytes == TMS9918_PIXELS_X;
 
   /* LOAD-BEARING: PRAM, not the LUT, which no top border has rebuilt yet. */
-  pico9918_border_bg = PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(tms9918->vram.map.pram
+  pico9918_border_bg = PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(PICO9918_PRAM(tms9918)
     [(TMS_REGISTER(tms9918, TMS_REG_FG_BG_COLOR) & 0x0f) |
      (packedNibbles ? 0 : (TMS_REGISTER(tms9918, PICO9918_REG_PALETTE_SELECT) & PICO9918_R24_TILE1_PS) << 4)]));
 
@@ -381,11 +381,11 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   {
     PICO9918_FILL32_SET_COUNT(PICO9918_FILL_BORDER, params->hVirtualPixels / 2);
     PICO9918_FILL32_TRIGGER(PICO9918_FILL_BORDER, dPixels);
-    tms9918->vram.map.blanking = 1; // V
+    PICO9918_BLANKING(tms9918) = 1; // V
     if ((y >= pico9918_v_border_impl(PICO9918_INST_ONLY) + pico9918_v_pixels_impl(PICO9918_INST_ONLY)))
     {
-      tms9918->vram.map.scanline = y - pico9918_v_border_impl(PICO9918_INST_ONLY);
-      TMS_STATUS(tms9918, PICO9918_SR_RASTER_LINE) = tms9918->vram.map.scanline;
+      PICO9918_SCANLINE(tms9918) = y - pico9918_v_border_impl(PICO9918_INST_ONLY);
+      TMS_STATUS(tms9918, PICO9918_SR_RASTER_LINE) = PICO9918_SCANLINE(tms9918);
     }
 
     if (PICO9918_HAS(tms9918, PICO9918_FEAT_OVERLAY) &&
@@ -427,8 +427,8 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   uint32_t lineStart = PICO9918_HOST_TIME_US();
 
   y -= pico9918_v_border_impl(PICO9918_INST_ONLY);
-  tms9918->vram.map.blanking = 0;
-  tms9918->vram.map.scanline = y;
+  PICO9918_BLANKING(tms9918) = 0;
+  PICO9918_SCANLINE(tms9918) = y;
   TMS_STATUS(tms9918, PICO9918_SR_RASTER_LINE) = y;
 
   /*** left border ***/
@@ -454,8 +454,8 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   /*** F18A status register updates ***/
   TMS_STATUS(tms9918, PICO9918_SR_IDENT) &= (uint8_t)~PICO9918_SR1_BLANK;
 
-  if (tms9918->vram.map.scanline &&
-      (TMS_REGISTER(tms9918, PICO9918_REG_HORZ_INT_LINE) == tms9918->vram.map.scanline))
+  if (PICO9918_SCANLINE(tms9918) &&
+      (TMS_REGISTER(tms9918, PICO9918_REG_HORZ_INT_LINE) == PICO9918_SCANLINE(tms9918)))
   {
     TMS_STATUS(tms9918, PICO9918_SR_IDENT) |= PICO9918_SR1_HF;
   }
@@ -469,7 +469,7 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
 
   PICO9918_FILL32_WAIT(PICO9918_FILL_BORDER);
 
-  tms9918->vram.map.blanking = 1; // H
+  PICO9918_BLANKING(tms9918) = 1; // H
 
   // convert all pixel data from color index to the host pixel format
 #if PICO9918_TEXT80_8BPP

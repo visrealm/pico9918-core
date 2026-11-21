@@ -409,7 +409,7 @@ PICO9918_DLLEXPORT void __time_critical_func(pico9918_reset)(PICO9918_INST_ONLY_
   // set up default palettes (arm is little-endian, tms9900 is big-endian)
   for (int i = 0; i < sizeof(defaultPalette) / sizeof(uint16_t); ++i)
   {
-    tms9918->vram.map.pram[i] = __builtin_bswap16(defaultPalette[i]);
+    PICO9918_PRAM(tms9918)[i] = __builtin_bswap16(defaultPalette[i]);
   }
 
   /* row-30 progressive has no border line, so nothing else invalidates the derived LUT */

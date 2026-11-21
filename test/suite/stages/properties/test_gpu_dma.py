@@ -190,7 +190,7 @@ def check(t, case, board, fails, notes):
                           width, height, stride, params)))
     t.vram(PROG, PROGRAM)
 
-    stale = t.read(t.vdp + TRIGGER, 2)
+    stale = t.read(t.at(TRIGGER), 2)
     if stale[0] or stale[1]:
         fails.append("%s: the trigger was %02x%02x before this job started, so the "
                      "transfer that follows is not this case's"

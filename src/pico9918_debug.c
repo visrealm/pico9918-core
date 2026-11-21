@@ -13,6 +13,7 @@
 #include "pico9918_debug.h"
 
 #include "impl/pico9918_priv.h"
+#include "impl/pico9918_gpu_priv.h"
 
 /*
  * The map, as runs of equal flags rather than as the fields it is made of - adjacent
@@ -39,6 +40,19 @@ typedef struct
   uint32_t flags;
 } pico9918_debug_region_t;
 
+#if PICO9918_V9938_BASE
+/* each window page mirrors its few live bytes, so a whole page shares their flags */
+static const pico9918_debug_region_t debugMap[] = {
+  {MAP_AT(pram), DEBUG_RW},
+  {MAP_AT(registers), DEBUG_RW | PICO9918_DEBUG_PALETTE},
+  {0x7000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_REGISTERS},
+  {0x9000, PICO9918_DEBUG_READABLE},
+  {MAP_AT(status), DEBUG_RW},
+  {0xC000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_STATUS},
+  {PICO9918_GPU_MEM_BYTES, DEBUG_RW},
+};
+#define DEBUG_AT(ADDR) pico9918_gpu_mem_at(PICO9918_INST(ADDR))
+#else
 static const pico9918_debug_region_t debugMap[] = {
   {MAP_AT(pram), DEBUG_RW},
   {MAP_AT(registers), DEBUG_RW | PICO9918_DEBUG_PALETTE},
@@ -47,6 +61,8 @@ static const pico9918_debug_region_t debugMap[] = {
   {MAP_AT(gram4), PICO9918_DEBUG_READABLE | PICO9918_DEBUG_STATUS},
   {(uint32_t)sizeof(((pico9918_t*)0)->vram), DEBUG_RW},
 };
+#define DEBUG_AT(ADDR) ((uint8_t*)&tms9918->vram + (ADDR))
+#endif
 
 /** \brief see the header. The flags at addr, and where they stop being true. */
 PICO9918_DLLEXPORT
@@ -77,8 +93,7 @@ size_t pico9918_debug_read(PICO9918_INST_ARG uint32_t addr, uint8_t* out, size_t
   size_t count = size - addr;
   if (count > len) count = len;
 
-  const uint8_t* const from = (const uint8_t*)&tms9918->vram + addr;
-  for (size_t i = 0; i < count; ++i) out[i] = from[i];
+  for (size_t i = 0; i < count; ++i) out[i] = *DEBUG_AT(addr + (uint32_t)i);
 
   return count;
 }
@@ -102,8 +117,7 @@ size_t pico9918_debug_write(PICO9918_INST_ARG uint32_t addr, const uint8_t* in, 
     size_t run = (size_t)(end - addr);
     if (run > len - done) run = len - done;
 
-    uint8_t* const to = (uint8_t*)&tms9918->vram + addr;
-    for (size_t i = 0; i < run; ++i) to[i] = in[done + i];
+    for (size_t i = 0; i < run; ++i) *DEBUG_AT(addr + (uint32_t)i) = in[done + i];
 
     /* the converted copy owes PRAM now, or the edit takes and the picture does not change */
     if (flags & PICO9918_DEBUG_PALETTE) tms9918->palDirty = 1;
@@ -165,7 +179,7 @@ uint16_t pico9918_debug_palette(PICO9918_INST_ARG uint8_t index)
 {
   if (index > PICO9918_R47_INDEX) return 0;
 
-  return __builtin_bswap16(tms9918->vram.map.pram[index]);
+  return __builtin_bswap16(PICO9918_PRAM(tms9918)[index]);
 }
 
 /** \brief see the header. The latch as an access would use it, permutation included. */

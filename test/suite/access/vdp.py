@@ -34,6 +34,11 @@ VRAM_REGISTERS = 0x6000
 VRAM_PRAM = 0x5000
 VRAM_STATUS = 0xB000
 
+LIVE_WINDOWS = {0x5: ("live.pram", 0x7F), 0x6: ("live.registers", 0x3F),
+                0x7: ("live.scanline", 0x01), 0x8: ("live.dma", 0x1F),
+                0xB: ("live.status", 0x0F)}
+LIVE_FIELDS = tuple(name for name, _ in LIVE_WINDOWS.values())
+
 
 class VdpAccess:
     """Everything a scene does to a VDP, in terms of two operations: read a range of
@@ -52,15 +57,24 @@ class VdpAccess:
     scalars ahead of that union, which renders a blank instance while every read
     agrees with itself."""
 
+    def at(self, addr):
+        """The target address behind an address of the VDP's own space, which is the
+        instance's `vram` itself unless the build keeps the live state elsewhere. A
+        transfer through it must stay inside one window."""
+        window = LIVE_WINDOWS.get(addr >> 12) if addr < 0x10000 else None
+        if window and window[0] in self.off:
+            return self.inst + self.off[window[0]] + (addr & window[1])
+        return self.vdp + addr
+
     def vram(self, addr, data):
         """write VDP address space - VRAM below 0x4000, registers at 0x6000"""
-        self.write(self.vdp + addr, bytes(data))
+        self.write(self.at(addr), bytes(data))
 
     def reg(self, index, value):
         self.vram(VRAM_REGISTERS + index, bytes([value]))
 
     def regs(self):
-        return self.read(self.vdp + VRAM_REGISTERS, 64)
+        return self.read(self.at(VRAM_REGISTERS), 64)
 
     def palette(self, index, rgb):
         """rgb is 12-bit 0xRGB. PRAM holds 0xFRGB big-endian - pico9918.c
@@ -108,7 +122,7 @@ class VdpAccess:
         and the picture is the whole point."""
         rows, pixels = frame or self.capture()
         width = self.width
-        pram = self.read(self.vdp + VRAM_PRAM, 64 * 2)   # 0xFRGB, big-endian
+        pram = self.read(self.at(VRAM_PRAM), 64 * 2)   # 0xFRGB, big-endian
         pal = rgb_palette(struct.unpack_from(">H", pram, i * 2)[0] for i in range(64))
         if width == PIXELS_X and self.regs()[0] & 0x04:
             pixels, width = unpack_nibbles(pixels, rows, width)

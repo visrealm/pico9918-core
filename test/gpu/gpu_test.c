@@ -114,7 +114,7 @@ static void loadWorkspaceProgram(void)
 
   tms9918->vram.bytes[NEW_WP]     = 0;
   tms9918->vram.bytes[NEW_WP + 1] = 0;
-  tms9918->vram.map.wrksp[0]      = 0;
+  ((uint8_t*)&tms9918->vram)[0x10000 + 0]      = 0;
   tms9918->vram.bytes[PICO9918_GPU_WORKSPACE] = 0;
 }
 
@@ -159,14 +159,14 @@ static void dma(uint32_t src, uint32_t dst, uint8_t width, uint8_t height, uint8
     tms9918->vram.bytes[DMA_DST + i] = 0;
   }
 
-  tms9918->vram.bytes[0x8000] = (uint8_t)(src >> 8);
-  tms9918->vram.bytes[0x8001] = (uint8_t)src;
-  tms9918->vram.bytes[0x8002] = (uint8_t)(dst >> 8);
-  tms9918->vram.bytes[0x8003] = (uint8_t)dst;
-  tms9918->vram.bytes[0x8004] = width;
-  tms9918->vram.bytes[0x8005] = height;
-  tms9918->vram.bytes[0x8006] = stride;
-  tms9918->vram.bytes[0x8007] = params;
+  PICO9918_DMA_PORTS(tms9918)[0] = (uint8_t)(src >> 8);
+  PICO9918_DMA_PORTS(tms9918)[1] = (uint8_t)src;
+  PICO9918_DMA_PORTS(tms9918)[2] = (uint8_t)(dst >> 8);
+  PICO9918_DMA_PORTS(tms9918)[3] = (uint8_t)dst;
+  PICO9918_DMA_PORTS(tms9918)[4] = width;
+  PICO9918_DMA_PORTS(tms9918)[5] = height;
+  PICO9918_DMA_PORTS(tms9918)[6] = stride;
+  PICO9918_DMA_PORTS(tms9918)[7] = params;
 
   loadDmaProgram();
   arm();
@@ -247,8 +247,8 @@ int main(void)
   if (pico9918_gpu_reg_value(PICO9918_INST 0) != MARKER)
     fail("gpu-r0", MARKER, pico9918_gpu_reg_value(PICO9918_INST 0));
 
-  tms9918->vram.map.wrksp[0] = 0x12;
-  tms9918->vram.map.wrksp[1] = 0x34;
+  ((uint8_t*)&tms9918->vram)[0x10000 + 0] = 0x12;
+  ((uint8_t*)&tms9918->vram)[0x10000 + 1] = 0x34;
   if (pico9918_gpu_reg_value(PICO9918_INST 1) != 0x1234)
     fail("gpu-r1", 0x1234, pico9918_gpu_reg_value(PICO9918_INST 1));
 

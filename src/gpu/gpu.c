@@ -44,11 +44,48 @@
 #error "PICO9918_BUILD_STEP_CALLBACK needs PICO9918_DEBUG_API and the interpreter's step hook"
 #endif
 
+#if PICO9918_V9938_BASE
+static uint8_t* gpuPage(PICO9918_INST_ARG uint32_t page, bool f18a, uintptr_t* mask)
+{
+  pico9918_live_t* const live = &tms9918->live;
+
+  switch (page)
+  {
+  case 0x5: *mask = 0x7F; return (uint8_t*)live->pram;
+  case 0x6: *mask = 0x3F; return live->registers;
+  case 0x7: *mask = 0x01; return &live->scanline;
+  case 0x8: *mask = 0x0F; return live->dma;
+  default: break;
+  }
+  if (!f18a)
+  {
+    *mask = (page == 0xB) ? 0x0F : 0xFFFF;
+    return (page == 0xB) ? live->status : tms9918->vram.bytes;
+  }
+  switch (page)
+  {
+  case 0x0:
+  case 0x1:
+  case 0x2:
+  case 0x3: *mask = 0x3FFF; return tms9918->vram.bytes;
+  case 0x4: *mask = 0x07FF; return tms9918->vram.bytes + 0x4000;
+  case 0xA: *mask = 0; return &live->status[14];
+  case 0xB: *mask = 0; return &live->status[2];
+  default: *mask = 0x01; return live->sink;
+  }
+}
+
+static void gpuFillPages(PICO9918_INST_ARG Tms9900Page* pages, bool f18a)
+{
+  for (uint32_t i = 0; i < 16; ++i) pages[i].base = gpuPage(PICO9918_INST i, f18a, &pages[i].mask);
+}
+#endif
+
 #if !PICO9918_GPU_BUDGETED
 /* run9900() implemented in platform/thumb9900_{m0,m33}.S */
 extern uint16_t run9900(uint8_t* memory, uint16_t pc, uint16_t wp, uint8_t* regx38);
 #if PICO9918_GPU_PAGED
-extern uint32_t pico9918_gpu_pages[16][2];
+extern Tms9900Page pico9918_gpu_pages[16];
 #endif
 #else
 #if defined(TMS9900_WATCH_WRITES)
@@ -107,6 +144,11 @@ static uint16_t run9900Budget(PICO9918_INST_ARG uint8_t* mem, uint16_t pc, uint1
   Tms9900Cpu cpu;
   tms9900_init(&cpu, mem, r38, pc, *wp);
   cpu.f18aMemory = f18aMemory;
+#if PICO9918_V9938_BASE
+  Tms9900Page pages[16];
+  gpuFillPages(PICO9918_INST pages, f18aMemory);
+  cpu.pages = pages;
+#endif
 #if defined(TMS9900_WATCH_WRITES)
   cpu.onWrite      = gpuDmaWatch;
   cpu.onWriteMask  = ~(uint32_t)0x1F;
@@ -248,14 +290,15 @@ static PICO9918_NOINLINE void dmaWrapped(uint8_t* vram, uint32_t src, uint32_t d
 
 static void triggerGpuDma(uint8_t* vram)
 {
-  const uint32_t srcVramAddr = __builtin_bswap16(*(uint16_t*)(vram + 0x8000));
-  const uint32_t dstVramAddr = __builtin_bswap16(*(uint16_t*)(vram + 0x8002));
+  uint8_t* const ports       = PICO9918_DMA_PORTS((pico9918_t*)vram);
+  const uint32_t srcVramAddr = __builtin_bswap16(*(uint16_t*)(ports + 0));
+  const uint32_t dstVramAddr = __builtin_bswap16(*(uint16_t*)(ports + 2));
 
   /* zero is 256 in both: the engine loads the register into a counter that stops at one */
-  const uint32_t width  = vram[0x8004] ? vram[0x8004] : 256;
-  const uint32_t height = vram[0x8005] ? vram[0x8005] : 256;
-  const uint32_t stride = vram[0x8006];
-  const uint32_t params = vram[0x8007];
+  const uint32_t width  = ports[4] ? ports[4] : 256;
+  const uint32_t height = ports[5] ? ports[5] : 256;
+  const uint32_t stride = ports[6];
+  const uint32_t params = ports[7];
 
   const int32_t  dstInc = (params & 0x02) ? -1 : 1;
   const int32_t  srcInc = (params & 0x01) ? 0 : dstInc;
@@ -308,7 +351,7 @@ static void triggerGpuDma(uint8_t* vram)
     }
   }
 
-  vram[0x8008] = 0;
+  ports[8] = 0;
 }
 
 #if defined(TMS9900_WATCH_WRITES)
@@ -320,7 +363,7 @@ static void triggerGpuDma(uint8_t* vram)
 static void gpuDmaWatch(uint8_t* vram, uint32_t addr)
 {
   (void)addr; /* onWriteMask/Match already select the port, so only it arrives */
-  if (vram[0x8008]) triggerGpuDma(vram);
+  if (PICO9918_DMA_PORTS((pico9918_t*)vram)[8]) triggerGpuDma(vram);
 }
 #endif
 
@@ -444,7 +487,7 @@ static PICO9918_NOINLINE bool volatileHack(PICO9918_INST_ARG uint32_t budget)
     if (didFault)
     {
       didFault = 0;
-      if (tms9918->vram.bytes[0x8008])
+      if (PICO9918_DMA_PORTS(tms9918)[8])
         triggerGpuDma(tms9918->vram.bytes);
       else if (!pico9918_gpu_palette_guard_off)
         gpuPaletteFault(PICO9918_INST_ONLY);
@@ -469,20 +512,16 @@ static PICO9918_NOINLINE bool volatileHack(PICO9918_INST_ARG uint32_t budget)
 void pico9918_gpu_init(PICO9918_INST_ONLY_ARG)
 {
   /* TRAP: the instance is uninitialised RAM, and this must precede guard(0) or it faults */
-  memset(&tms9918->vram.bytes[0x8000], 0, 32);
+  memset(PICO9918_DMA_PORTS(tms9918), 0, 32);
 #ifdef PICO_BUILD
 #if !PICO_RP2040
   mpu_hw->mair[0] = 0x44; /* normal non-cacheable, so a guarded read stays an ordinary load */
 #endif
-  guard(0, &(tms9918->vram.bytes[0x8000]), 32);
-  guard(1, tms9918->vram.map.pram, 64 * sizeof(*tms9918->vram.map.pram));
+  guard(0, PICO9918_DMA_PORTS(tms9918), 32);
+  guard(1, PICO9918_PRAM(tms9918), 64 * sizeof(*PICO9918_PRAM(tms9918)));
 #endif
 #if PICO9918_GPU_PAGED
-  for (uint32_t i = 0; i < 16; ++i)
-  {
-    pico9918_gpu_pages[i][0] = (uint32_t)(uintptr_t)tms9918->vram.bytes;
-    pico9918_gpu_pages[i][1] = 0xFFFF;
-  }
+  gpuFillPages(PICO9918_INST pico9918_gpu_pages, !PICO9918_GPU_FLAT_MEM(tms9918));
 #endif
 #if PICO9918_GPU_BUDGETED
   tms9918->gpuWp = PICO9918_GPU_WORKSPACE;
@@ -571,8 +610,23 @@ uint16_t pico9918_gpu_wp(PICO9918_INST_ONLY_ARG)
 PICO9918_DLLEXPORT
 uint32_t pico9918_gpu_mem_size(void)
 {
+#if PICO9918_V9938_BASE
+  return PICO9918_GPU_MEM_BYTES;
+#else
   return (uint32_t)sizeof(((pico9918_t*)0)->vram);
+#endif
 }
+
+#if PICO9918_V9938_BASE
+uint8_t* pico9918_gpu_mem_at(PICO9918_INST_ARG uint32_t addr)
+{
+  if (addr > 0xFFFF) return &tms9918->vram.bytes[addr];
+
+  uintptr_t mask;
+  uint8_t* const base = gpuPage(PICO9918_INST addr >> 12, false, &mask);
+  return &base[addr & mask];
+}
+#endif
 
 /** \brief see the header. A byte of that map, or 0 past the end of it. */
 PICO9918_DLLEXPORT
@@ -580,8 +634,12 @@ uint8_t pico9918_gpu_mem_value(PICO9918_INST_ARG uint32_t addr)
 {
   if (addr >= pico9918_gpu_mem_size()) return 0;
 
+#if PICO9918_V9938_BASE
+  return *pico9918_gpu_mem_at(PICO9918_INST addr);
+#else
   /* not vram.bytes: that array stops at 0xFFFF and the workspace overflow is past it */
   return ((const uint8_t*)&tms9918->vram)[addr];
+#endif
 }
 
 /** \brief see the header. R0-R15 as words at the workspace the program is using. */

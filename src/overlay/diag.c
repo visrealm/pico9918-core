@@ -575,7 +575,7 @@ static void renderPalette(PICO9918_INST_ARG int y, uint32_t vVirtualPixels, PICO
         /* WARNING: the trailing `& 0xfff` is load-bearing, so do not swap this for pico9918_palette_lut.
            The LUT replicates green into bits 15-12, and the RP2040 CRT-dim path shifts the pixel pair
            right UNMASKED, landing bit 12 in blue's MSB. */
-        uint32_t color = tms9918->vram.map.pram[palette * 16 + c] & 0xFF0F;
+        uint32_t color = PICO9918_PRAM(tms9918)[palette * 16 + c] & 0xFF0F;
         color |= (color & 0xf000) >> 8;
         color &= 0xfff;
 

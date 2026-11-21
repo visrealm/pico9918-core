@@ -1583,10 +1583,16 @@ I_XOP: // F18A PIX instruction
         BICS R4,R7      // R4=00000000 xxxxx000
         ORRS R2,R4      // R2=000yyyyy xxxxxyyy (byte offset)
 
+#if PICO9918_GPU_PAGED
+        MOV  R7,R9
+        SUBS R7,#0x38-4
+        LDRB R4,[R7,#0] // Get VR04
+#else
         ADR  R7,VREGSL
         LDR  R7,[R7,#0] // Get offset
         ADD  R7,R8      // Within the 64KB memory area
         LDRB R4,[R7,#4] // Get VR04
+#endif
         MOVS R7,#0x04   // BM Pattern Table Location
         ANDS R4,R7      // Can only be >0000 or >2000 (E/A 335)
         LSLS R4,#11     // Move bit into position
@@ -1611,9 +1617,14 @@ I_XOP_BL: // Return to C code function: F18A_PIX for BL mode
 .align 4
 I_XOP_BL:
         SAVEPC
+#if PICO9918_GPU_PAGED
+        MOV  R3,R9
+        SUBS R3,#0x38-0x20
+#else
         ADR  R3,VREGSH
         LDR  R3,[R3,#0]  // Get offset
         ADD  R3,R8       // Within the 64KB memory area
+#endif
         LDRB R0,[R3,#3]  // Get VR35
 
         UXTB R7,R5       // Y

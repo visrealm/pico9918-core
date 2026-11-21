@@ -50,10 +50,22 @@ extern "C"
    pico9918_debug.h's stepping entry and nothing else, and it widens this struct, so a
    build without a debugger must not carry it. src/CMakeLists.txt sets it. */
 
+#if PICO9918_V9938_BASE
+  /* one 4KB page of the data map: an operand at a lands at base[a & mask] */
+  typedef struct
+  {
+    uint8_t* base;
+    uintptr_t mask;
+  } Tms9900Page;
+#endif
+
   typedef struct Tms9900Cpu
   {
     uint8_t* mem;    /* Pointer to memory backing the CPU */
     uint8_t* regx38; /* Pointer to the GPU control byte (TMS register 0x38) */
+#if PICO9918_V9938_BASE
+    const Tms9900Page* pages;
+#endif
     uint32_t pc;     /* Program counter (uint32_t to handle WP=0xFFFE overflow) */
     uint16_t wp;     /* Workspace pointer */
     uint16_t st;     /* Status register (flag layout matches assembly core) */

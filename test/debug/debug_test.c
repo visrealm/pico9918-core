@@ -154,6 +154,28 @@ static uint32_t suppressDigest(uint32_t mask, void (*scene)(void), uint16_t y, u
 
 #endif
 
+#if PICO9918_V9938_BASE
+#define WALK_REGIONS 7
+static uint8_t* backing(uint32_t addr)
+{
+  switch (addr >> 12)
+  {
+  case 0x5: return (uint8_t*)tms9918->live.pram + (addr & 0x7f);
+  case 0x6: return tms9918->live.registers + (addr & 0x3f);
+  case 0x7: return &tms9918->live.scanline + (addr & 0x01);
+  case 0x8: return tms9918->live.dma + (addr & 0x0f);
+  case 0xb: return tms9918->live.status + (addr & 0x0f);
+  default: return tms9918->vram.bytes + addr;
+  }
+}
+#else
+#define WALK_REGIONS 6
+static uint8_t* backing(uint32_t addr)
+{
+  return (uint8_t*)&tms9918->vram + addr;
+}
+#endif
+
 int main(void)
 {
   const uint32_t size = pico9918_gpu_mem_size();
@@ -169,6 +191,17 @@ int main(void)
                PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE | PICO9918_DEBUG_PALETTE, 0x6000);
   expectRegion("pram-last", 0x5fff,
                PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE | PICO9918_DEBUG_PALETTE, 0x6000);
+#if PICO9918_V9938_BASE
+  expectRegion("regs-first", 0x6000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_REGISTERS, 0x7000);
+  expectRegion("regs-last", 0x6fff, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_REGISTERS, 0x7000);
+  expectRegion("live-first", 0x7000, PICO9918_DEBUG_READABLE, 0x9000);
+  expectRegion("live-last", 0x8fff, PICO9918_DEBUG_READABLE, 0x9000);
+  expectRegion("gram3-first", 0x9000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE, 0xb000);
+  expectRegion("gram3-last", 0xafff, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE, 0xb000);
+  expectRegion("status-first", 0xb000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_STATUS, 0xc000);
+  expectRegion("status-last", 0xbfff, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_STATUS, 0xc000);
+  expectRegion("gram4-first", 0xc000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE, size);
+#else
   expectRegion("regs-first", 0x6000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_REGISTERS, 0x6040);
   expectRegion("regs-last", 0x603f, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_REGISTERS, 0x6040);
   expectRegion("gram2-first", 0x6040, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE, 0xb000);
@@ -176,6 +209,7 @@ int main(void)
   expectRegion("status-first", 0xb000, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_STATUS, 0xb010);
   expectRegion("status-last", 0xb00f, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_STATUS, 0xb010);
   expectRegion("gram4-first", 0xb010, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE, size);
+#endif
   expectRegion("wrksp-last", size - 1, PICO9918_DEBUG_READABLE | PICO9918_DEBUG_WRITABLE, size);
 
   /* and the workspace overflow is inside the map, which is the whole reason the map is
@@ -203,7 +237,7 @@ int main(void)
     ++regions;
   }
   if (at != size) fail("walk-end", size, at);
-  if (regions != 6) fail("walk-regions", 6, regions);
+  if (regions != WALK_REGIONS) fail("walk-regions", WALK_REGIONS, regions);
 
   /* a null end is legal, because a caller that only wants the flags should not have to
      invent somewhere to put a number it will not read */
@@ -220,7 +254,7 @@ int main(void)
   {
     uint8_t got = 0;
 
-    ((uint8_t*)&tms9918->vram)[probes[i]] = (uint8_t)(0x5a + i);
+    *backing(probes[i]) = (uint8_t)(0x5a + i);
     if (pico9918_debug_read(PICO9918_INST probes[i], &got, 1) != 1) fail("probe-short", 1, 0);
     if (got != (uint8_t)(0x5a + i)) fail("probe-value", (uint8_t)(0x5a + i), got);
     if (got != pico9918_gpu_mem_value(PICO9918_INST probes[i]))
@@ -229,7 +263,7 @@ int main(void)
 
   /* the workspace overflow reads through the span too, which walking vram.bytes cannot
      do - that array stops at 0xFFFF */
-  tms9918->vram.map.wrksp[4] = 0xa5;
+  ((uint8_t*)&tms9918->vram)[0x10000 + 4] = 0xa5;
   {
     uint8_t got = 0;
 
@@ -274,10 +308,10 @@ int main(void)
     if (((uint8_t*)&tms9918->vram)[0x101f] != 0x77) fail("write-vram-last", 0x77, 0);
 
     /* into the register window from below: short at 0x6000, and the file is untouched */
-    ((uint8_t*)&tms9918->vram)[0x6000] = 0x11;
+    TMS_REGISTER(tms9918, 0) = 0x11;
     if (pico9918_debug_write(PICO9918_INST 0x5ff0, buf, sizeof(buf)) != 0x10)
       fail("write-into-regs", 0x10, 0);
-    if (((uint8_t*)&tms9918->vram)[0x6000] != 0x11) fail("write-regs-leaked", 0x11, 0x77);
+    if (TMS_REGISTER(tms9918, 0) != 0x11) fail("write-regs-leaked", 0x11, 0x77);
 
     /* starting inside it: nothing at all, which is how a caller tells it was refused */
     if (pico9918_debug_write(PICO9918_INST 0x6010, buf, sizeof(buf)) != 0)
@@ -346,7 +380,7 @@ int main(void)
 
   /* 10. the palette comes back in host order, undoing the big-endian storage - written
          through the library's own path so the test is not just bswapping its own bswap */
-  tms9918->vram.map.pram[7] = __builtin_bswap16(0x0abc);
+  PICO9918_PRAM(tms9918)[7] = __builtin_bswap16(0x0abc);
   if (pico9918_debug_palette(PICO9918_INST 7) != 0x0abc)
     fail("palette-host-order", 0x0abc, pico9918_debug_palette(PICO9918_INST 7));
   if (pico9918_debug_palette(PICO9918_INST 64) != 0) fail("palette-out-of-range", 0, 1);
@@ -508,7 +542,7 @@ int main(void)
   {
     uint8_t* const before = malloc(sizeof(pico9918_t));
     const uint8_t* const live = (const uint8_t*)tms9918;
-    const uint32_t regByte = 0x6000 + 20;
+    const uint32_t regByte = (uint32_t)(backing(0x6000 + 20) - (uint8_t*)tms9918);
     const uint32_t dirty   = (uint32_t)offsetof(pico9918_t, palDirty);
     unsigned moved = 0;
 
@@ -650,7 +684,8 @@ int main(void)
     {
       uint8_t* const before     = malloc(sizeof(pico9918_t));
       const uint8_t* const live = (const uint8_t*)tms9918;
-      const uint32_t statusByte = 0xB000 + PICO9918_SR_SECONDS_LSB;
+      const uint32_t statusByte =
+        (uint32_t)(backing(0xB000 + PICO9918_SR_SECONDS_LSB) - (uint8_t*)tms9918);
       unsigned moved            = 0;
 
       if (!before) return fail("status-snapshot-alloc", 1, 0), 1;

@@ -163,6 +163,23 @@ static inline uint32_t gpu_addr(uint16_t a)
   return gpu_window_base[w] | (a & gpu_window_mask[w]);
 }
 
+#if PICO9918_V9938_BASE
+static inline uint8_t rd8(Tms9900Cpu* cpu, uint16_t a)
+{
+  if (F18A_ACTIVE && !((GPU_WINDOW_READS >> (a >> 12)) & 1)) return 0;
+  const Tms9900Page* const p = &cpu->pages[a >> 12];
+  return p->base[a & p->mask];
+}
+
+static inline void wr8(Tms9900Cpu* cpu, uint16_t a, uint8_t v)
+{
+  if (F18A_ACTIVE && !((GPU_WINDOW_WRITES >> (a >> 12)) & 1)) return;
+  const Tms9900Page* const p = &cpu->pages[a >> 12];
+  uint8_t* const at          = &p->base[a & p->mask];
+
+  *at = (F18A_ACTIVE && (a >> 12) == 0xB) ? (uint8_t)((v & 0x7F) | (*at & 0x80)) : v;
+}
+#else
 static inline uint8_t rd8(Tms9900Cpu* cpu, uint16_t a)
 {
   if (!F18A_ACTIVE) return cpu->mem[a];
@@ -183,6 +200,7 @@ static inline void wr8(Tms9900Cpu* cpu, uint16_t a, uint8_t v)
   /* bit 7 of SR2 says the GPU is running and stays ours; the program owns the other seven */
   cpu->mem[at] = (at == 0xB002) ? (uint8_t)((v & 0x7F) | (cpu->mem[at] & 0x80)) : v;
 }
+#endif
 
 static inline uint16_t rd16(Tms9900Cpu* cpu, uint16_t a)
 {
@@ -921,18 +939,18 @@ static inline void handle_format9(Tms9900Cpu* cpu, uint16_t inst)
       r &= (uint16_t)~0xF8;
       r |= (uint16_t)(x & 0xF8);
 
-      uint8_t vr04 = cpu->mem[0x6004];
+      uint8_t vr04 = cpu->regx38[0x04 - 0x38];
       r |= (uint16_t)((vr04 & 0x04) << 11);
 
       set_reg(cpu, dreg, r);
     }
     else /* BL mode */
     {
-      uint8_t vr35 = cpu->mem[0x6023];
+      uint8_t vr35 = cpu->regx38[0x23 - 0x38];
 
       /* Four pixels a byte, so the stride rounds up; width zero already means 256 */
       uint16_t stride = (uint16_t)((uint8_t)(vr35 - 1u) >> 2) + 1u;
-      uint8_t vr32    = cpu->mem[0x6020];
+      uint8_t vr32    = cpu->regx38[0x20 - 0x38];
       uint16_t a      = (uint16_t)((((uint16_t)vr32 << 6) + y * stride + (x >> 2)) & 0x3FFF);
 
       if (flags & 0x4000) /* PIX_A: address only */
@@ -1174,6 +1192,9 @@ void tms9900_init(Tms9900Cpu* cpu, uint8_t* mem, uint8_t* regx38, uint16_t pc, u
 {
   cpu->mem    = mem;
   cpu->regx38 = regx38;
+#if PICO9918_V9938_BASE
+  cpu->pages = NULL;
+#endif
   cpu->pc     = pc;
   cpu->wp     = wp;
   cpu->st         = 0;

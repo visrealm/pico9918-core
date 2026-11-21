@@ -79,11 +79,11 @@ configure() {
   if [ -n "${CI_GENERATOR:-}" ]; then
     $CMAKE -S "$src" -B "$dir" -G "$CI_GENERATOR" -DCMAKE_BUILD_TYPE="$CONFIG" \
       -DPython3_EXECUTABLE="$PY_PATH" \
-      -DPICO9918_SINGLE_INSTANCE=$INSTANCE "$@"
+      -DPICO9918_SINGLE_INSTANCE=$INSTANCE ${CI_CMAKE_ARGS:-} "$@"
   else
     $CMAKE -S "$src" -B "$dir" -DCMAKE_BUILD_TYPE="$CONFIG" \
       -DPython3_EXECUTABLE="$PY_PATH" \
-      -DPICO9918_SINGLE_INSTANCE=$INSTANCE "$@"
+      -DPICO9918_SINGLE_INSTANCE=$INSTANCE ${CI_CMAKE_ARGS:-} "$@"
   fi
 }
 

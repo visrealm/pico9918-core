@@ -61,4 +61,8 @@ target_include_directories(${PROGRAM} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/gpu
 )
 
+if(PICO9918_V9938_BASE)
+    target_compile_definitions(${PROGRAM} PRIVATE PICO9918_V9938_BASE=1)
+endif()
+
 endif()

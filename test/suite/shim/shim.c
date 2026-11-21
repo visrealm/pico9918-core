@@ -192,7 +192,7 @@ static size_t buildView(void)
   uint8_t rgb[64][3];
   for (int i = 0; i < 64; ++i)
   {
-    const uint16_t v = __builtin_bswap16(tms9918->vram.map.pram[i]); /* 0xFRGB */
+    const uint16_t v = __builtin_bswap16(PICO9918_PRAM(tms9918)[i]); /* 0xFRGB */
     rgb[i][0]        = (uint8_t)(((v >> 8) & 0xF) * 0x11);
     rgb[i][1]        = (uint8_t)(((v >> 4) & 0xF) * 0x11);
     rgb[i][2]        = (uint8_t)((v & 0xF) * 0x11);
@@ -418,6 +418,13 @@ int main(void)
       printf("lockedMask %u\n", (unsigned)offsetof(struct pico9918_s, lockedMask));
       printf("palDirty %u\n", (unsigned)offsetof(struct pico9918_s, palDirty));
       printf("configDirty %u\n", (unsigned)offsetof(struct pico9918_s, configDirty));
+#if PICO9918_V9938_BASE
+      printf("live.pram %u\n", (unsigned)offsetof(struct pico9918_s, live.pram));
+      printf("live.registers %u\n", (unsigned)offsetof(struct pico9918_s, live.registers));
+      printf("live.scanline %u\n", (unsigned)offsetof(struct pico9918_s, live.scanline));
+      printf("live.dma %u\n", (unsigned)offsetof(struct pico9918_s, live.dma));
+      printf("live.status %u\n", (unsigned)offsetof(struct pico9918_s, live.status));
+#endif
       reply("end");
     }
     else if (!strcmp(command, "palette"))

@@ -1299,7 +1299,11 @@ I_XOP: // F18A PIX instruction
         UBFX R4,R5,#11,#5    // R4=00000000 000xxxxx
         ORR  R2,R2,R4,LSL #3 // R2=000yyyyy xxxxxyyy (byte offset)
 
+#if PICO9918_GPU_PAGED
+        SUB  R7,R9,#0x38
+#else
         ADD  R7,R8,#0x6000   // Video registers within the 64KB memory area
+#endif
         LDRB R4,[R7,#4]      // Get VR04
         AND  R4,R4,#4        // Can only be >0000 or >2000 (E/A 335)
         ORR  R2,R2,R4,LSL #11 // BM Pattern Table Location
@@ -1323,7 +1327,11 @@ I_XOP_BL: // Return to C code function: F18A_PIX for BL mode
 .align 4
 I_XOP_BL:
         MOV  R12,R3      // Save current PC - R12 is spare, and an IRQ stacks it
+#if PICO9918_GPU_PAGED
+        SUB  R3,R9,#0x38
+#else
         ADD  R3,R8,#0x6000 // Video registers within the 64KB memory area
+#endif
         LDRB R0,[R3,#0x23] // Get VR35
 
         SUBS R0,#1         // Rounded stride, and width zero already means 256

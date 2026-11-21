@@ -184,6 +184,9 @@ static void sceneBegin(void)
  * sceneBegin()'s reset, so no state leaks into the next scene. */
 static void dumpPalette(uint8_t out[GOLDEN_PAL_BYTES])
 {
+#if PICO9918_V9938_BASE
+  memcpy(out, PICO9918_PRAM(tms9918), GOLDEN_PAL_BYTES);
+#else
   unlockF18a();
   regWrite(0, 0x00);  /* Graphics I */
   regWrite(1, 0x40);  /* display on */
@@ -209,6 +212,7 @@ static void dumpPalette(uint8_t out[GOLDEN_PAL_BYTES])
       dst[i] = (uint8_t)((p[0] << 6) | (p[1] << 4) | (p[2] << 2) | p[3]);
     }
   }
+#endif
 }
 
 /* ---------------------------------------------------------------------------
@@ -333,7 +337,7 @@ static uint32_t refLut[256];
  * Deliberately does not share code with the library's version. */
 static void refRegenerate(bool paired)
 {
-  const uint16_t* pram = tms9918->vram.map.pram;
+  const uint16_t* pram = PICO9918_PRAM(tms9918);
 
   if (!paired)
   {
@@ -1772,7 +1776,7 @@ static void refPalettePanel(int y, uint32_t vVirtualPixels, PICO9918_PIXEL_T* pi
   int pair = 32;
   for (int c = 0; c < 16; ++c)
   {
-    const PICO9918_PIXEL_T sw = refSwatch(tms9918->vram.map.pram[palette * 16 + c]);
+    const PICO9918_PIXEL_T sw = refSwatch(PICO9918_PRAM(tms9918)[palette * 16 + c]);
     for (int i = 0; i < 30; ++i) pixels[pair * 2 + i] = sw;
     pair += 16;
   }
@@ -1937,11 +1941,11 @@ static void overlayPanelCase(const char* label, bool registers, bool address,
    * bits the swatch actually shows. */
   if (palette)
   {
-    tms9918->vram.map.pram[0]  = 0x3f70; /* G=3 B=f pad=7 R=0 */
-    tms9918->vram.map.pram[5]  = 0xc59a; /* G=c B=5 pad=9 R=a */
-    tms9918->vram.map.pram[17] = 0x08f3; /* G=0 B=8 pad=f R=3 */
-    tms9918->vram.map.pram[33] = 0xfae1;
-    tms9918->vram.map.pram[49] = 0x714c;
+    PICO9918_PRAM(tms9918)[0]  = 0x3f70; /* G=3 B=f pad=7 R=0 */
+    PICO9918_PRAM(tms9918)[5]  = 0xc59a; /* G=c B=5 pad=9 R=a */
+    PICO9918_PRAM(tms9918)[17] = 0x08f3; /* G=0 B=8 pad=f R=3 */
+    PICO9918_PRAM(tms9918)[33] = 0xfae1;
+    PICO9918_PRAM(tms9918)[49] = 0x714c;
     tms9918->palDirty = 1;
   }
   /* Every register the address panel reports is given a value with bits set in

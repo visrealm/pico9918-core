@@ -33,6 +33,11 @@ PICO9918_INLINE void pico9918_gpu_trigger(PICO9918_INST_ONLY_ARG)
   tms9918->restart = 1;
 }
 
+#if PICO9918_V9938_BASE
+/* the byte behind an address of the debug span, which has the PICO9918's GPU map shape */
+uint8_t* pico9918_gpu_mem_at(PICO9918_INST_ARG uint32_t addr);
+#endif
+
 #if PICO9918_GPU_BUDGETED
 
 /* A slice for an armed program. In gpu.c because it steps the core; the gpuSlice test

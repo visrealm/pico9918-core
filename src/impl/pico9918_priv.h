@@ -170,6 +170,35 @@ typedef struct
   uint8_t wrksp[36];                            // 0x10000 overflow for hidden workspace
 } pico9918_mem_map_t;
 
+#if PICO9918_V9938_BASE
+#if PICO_RP2040
+#define PICO9918_EXP_RAM 0
+#else
+#define PICO9918_EXP_RAM 1
+#endif
+#define PICO9918_VRAM_BYTES (0x20000 + PICO9918_EXP_RAM * 0x10000)
+
+/* The F18A state, out of guest VRAM. 256-byte aligned by following it, and laid out so
+   each MPU guard owns whole 32-byte subregions:
+     0x00 pram       128  guard 1
+     0x80 dma         32  guard 0
+     0xA0 registers   64
+     0xE0 status      16
+     0xF0 scanline, blanking, then a sink for the GPU's absent pages */
+typedef struct
+{
+  uint16_t pram[64];
+  uint8_t dma[32];
+  uint8_t registers[TMS_REGISTERS];
+  uint8_t status[TMS_STATUS_REGISTERS];
+  uint8_t scanline;
+  uint8_t blanking;
+  uint8_t sink[14];
+} pico9918_live_t;
+
+#define PICO9918_GPU_MEM_BYTES (0x10000u + 36u)
+#endif
+
 /* Whether a GPU pass can be capped, and so whether the library can pace one itself. The
    hand-written Thumb cores run a program to completion and ignore a cap; the builds that
    have them are boards, which run the GPU on a core of their own. Here rather than in
@@ -222,8 +251,22 @@ typedef struct
 #define PICO9918_SR1_ID(T) 0xE8
 #endif
 
-#define TMS_REGISTER(T, R) (T->vram.map.registers[R])
-#define TMS_STATUS(T, R) (T->vram.map.status[R])
+#if PICO9918_V9938_BASE
+#define TMS_REGISTER(T, R)     (T->live.registers[R])
+#define TMS_STATUS(T, R)       (T->live.status[R])
+#define PICO9918_PRAM_FIELD    live.pram
+#define PICO9918_SCANLINE(T)   ((T)->live.scanline)
+#define PICO9918_BLANKING(T)   ((T)->live.blanking)
+#define PICO9918_DMA_PORTS(T)  ((T)->live.dma)
+#else
+#define TMS_REGISTER(T, R)     (T->vram.map.registers[R])
+#define TMS_STATUS(T, R)       (T->vram.map.status[R])
+#define PICO9918_PRAM_FIELD    vram.map.pram
+#define PICO9918_SCANLINE(T)   ((T)->vram.map.scanline)
+#define PICO9918_BLANKING(T)   ((T)->vram.map.blanking)
+#define PICO9918_DMA_PORTS(T)  (&(T)->vram.bytes[0x8000])
+#endif
+#define PICO9918_PRAM(T) ((T)->PICO9918_PRAM_FIELD)
 
 /* Graphics II is the A in TMS9918A: the pre-A personality does not decode R0 M3.
    PICO9918_HAS folds to a literal true without the runtime switch. */
@@ -260,11 +303,19 @@ struct pico9918_s
   /* First: every VRAM, register and status access goes through this union, so at offset
      zero the instance pointer doubles as its base, and the GPU MPU guard's two ranges
      are page-aligned by construction rather than by an offset-derived mask. */
+#if PICO9918_V9938_BASE
+  struct
+  {
+    uint8_t bytes[PICO9918_VRAM_BYTES];
+  } vram;
+  pico9918_live_t live;
+#else
   union
   {
     uint8_t bytes[VRAM_SIZE];
     pico9918_mem_map_t map;
   } vram;
+#endif
 
   /* current address for cpu access (auto-increments) */
   uint32_t currentAddress;
@@ -684,7 +735,7 @@ PICO9918_INLINE_HOT void pico9918_write_data_impl(PICO9918_INST_ARG uint8_t data
       tms9918->palWriteStage = 0;
 
       // this looks backwards because ARM is little-endian, TMS9900 is big-endian.
-      tms9918->vram.map.pram[TMS_REGISTER(tms9918, PICO9918_REG_PALETTE_CONTROL) & PICO9918_R47_INDEX] =
+      PICO9918_PRAM(tms9918)[TMS_REGISTER(tms9918, PICO9918_REG_PALETTE_CONTROL) & PICO9918_R47_INDEX] =
         (tms9918->palWriteStage0Value) | (data << 8);
       tms9918->palDirty = 1;
 

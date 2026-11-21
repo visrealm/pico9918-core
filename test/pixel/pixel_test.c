@@ -56,12 +56,12 @@ static void unlock(void)
    wrong layout cannot accidentally match the right one. */
 static void distinctPalette(void)
 {
-  for (int i = 0; i < 64; ++i) tms9918->vram.map.pram[i] = (uint16_t)(0xf000 | (i * 0x111));
+  for (int i = 0; i < 64; ++i) PICO9918_PRAM(tms9918)[i] = (uint16_t)(0xf000 | (i * 0x111));
 }
 
 static uint16_t want(int index)
 {
-  return (uint16_t)PICO9918_PIXEL_FROM_RGB12(tms9918->vram.map.pram[index]);
+  return (uint16_t)PICO9918_PIXEL_FROM_RGB12(PICO9918_PRAM(tms9918)[index]);
 }
 
 static void renderLines(uint16_t from, uint16_t to)
@@ -261,7 +261,7 @@ static void checkVblankBackdrop(void)
   regWrite(24, 0x00);
   renderLines(0, 240);
 
-  tms9918->vram.map.pram[5] = 0x0f8f;
+  PICO9918_PRAM(tms9918)[5] = 0x0f8f;
   tms9918->palDirty         = 1;
 
   renderLines(0, 1);
@@ -283,14 +283,14 @@ static void checkGpuFade(void)
   regWrite(7, 0x01);
   regWrite(24, 0x00);
 
-  uint8_t* const vram = tms9918->vram.map.base;
+  uint8_t* const vram = tms9918->vram.bytes;
   for (int i = 0; i < 0x300; ++i) vram[i] = (uint8_t)i;
   for (int i = 0; i < 0x800; ++i) vram[0x800 + i] = 0xaa;
   for (int i = 0; i < 0x20; ++i) vram[0x2000 + i] = (uint8_t)(((i + 1) << 4) | ((i + 2) & 0x0f));
 
   renderLines(0, 240);
 
-  for (int i = 0; i < 64; ++i) tms9918->vram.map.pram[i] = (uint16_t)(0x0f00 | (i * 0x11));
+  for (int i = 0; i < 64; ++i) PICO9918_PRAM(tms9918)[i] = (uint16_t)(0x0f00 | (i * 0x11));
 
   const uint16_t y = activeLine();
   renderLines(y, y + 1);

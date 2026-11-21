@@ -36,7 +36,7 @@ const pico9918_t* pico9918_palette_owner = 0;
    PICO9918_PIXEL_FROM_RGB12_PAIR, which is the same policy applied to each half. */
 typedef uint32_t PICO9918_MAY_ALIAS pico9918_aliasing_u32_t;
 _Static_assert(_Alignof(pico9918_t) >= 4, "palette LUT build requires word alignment");
-_Static_assert(offsetof(pico9918_t, vram.map.pram) % 4 == 0, "palette LUT build must be word aligned");
+_Static_assert(offsetof(pico9918_t, PICO9918_PRAM_FIELD) % 4 == 0, "palette LUT build must be word aligned");
 
 /*
  * Raw PRAM as of the last rebuild, and the layout it was built for: 0 means there is no
@@ -64,7 +64,7 @@ PICO9918_NOINLINE void pico9918_palette_regenerate(PICO9918_INST_ONLY_ARG)
 {
   const bool pixelsDoubled = pico9918_display_mode(PICO9918_INST_ONLY) != TMS_MODE_TEXT80 ||
                              pico9918_line_bytes(PICO9918_INST_ONLY) != TMS9918_PIXELS_X;
-  const uint16_t* source   = tms9918->vram.map.pram;
+  const uint16_t* source   = PICO9918_PRAM(tms9918);
   const pico9918_aliasing_u32_t* words =
     (const pico9918_aliasing_u32_t*)PICO9918_ASSUME_ALIGNED(source, 4);
 

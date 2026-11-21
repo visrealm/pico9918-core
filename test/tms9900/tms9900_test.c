@@ -102,8 +102,8 @@ static void run_c(void);
 static void run_asm(void)
 {
 #ifdef PICO_BUILD
-  uint8_t r38 = 1;
-  run9900(mem, PROG, WP, &r38);
+  mem[0x6038] = 1;
+  run9900(mem, PROG, WP, &mem[0x6038]);
 #else
   run_c();
   /* That was the C core, and every case runs run_c() as its second pass, so the
@@ -119,10 +119,23 @@ static bool f18aMemory = false;
 
 static void run_c(void)
 {
-  uint8_t r38 = 1;
   Tms9900Cpu cpu;
-  tms9900_init(&cpu, mem, &r38, PROG, WP);
+  mem[0x6038] = 1;
+  tms9900_init(&cpu, mem, &mem[0x6038], PROG, WP);
   cpu.f18aMemory = f18aMemory;
+#if PICO9918_V9938_BASE
+  static const uint16_t base[16] = {0, 0, 0, 0, 0x4000, 0x5000, 0x6000, 0x7000,
+                                    0x8000, 0, 0xB00E, 0xB002, 0, 0, 0, 0};
+  static const uint16_t mask[16] = {0x3FFF, 0x3FFF, 0x3FFF, 0x3FFF, 0x07FF, 0x007F, 0x003F, 0x0001,
+                                    0x000F, 0, 0, 0, 0, 0, 0, 0};
+  Tms9900Page pages[16];
+  for (int i = 0; i < 16; ++i)
+  {
+    pages[i].base = f18aMemory ? mem + base[i] : mem;
+    pages[i].mask = f18aMemory ? mask[i] : 0xFFFF;
+  }
+  cpu.pages = pages;
+#endif
   run9900_c(&cpu);
   indepPass = 1;
 }
