@@ -191,21 +191,31 @@ static bool PICO9918_IN_FLASH_FUNC(unit)(PICO9918_INST_ARG pico9918_v9938_cmd_t*
     return !(c->asx & (c->xmask + 1));
   }
   case OP_LINE: return lineUnit(PICO9918_INST c);
-  case OP_LMMV:
-  case OP_LMMC: pset(PICO9918_INST c, c->adx, (uint32_t)c->dy, mxd, c->color & c->cmask); break;
+  case OP_LMMV: pset(PICO9918_INST c, c->adx, (uint32_t)c->dy, mxd, c->color & c->cmask); break;
   case OP_LMMM:
     pset(PICO9918_INST c, c->adx, (uint32_t)c->dy, mxd, point(PICO9918_INST c, c->asx, (uint32_t)c->sy, mxs));
     break;
-  case OP_LMCM: c->color = point(PICO9918_INST c, c->asx, (uint32_t)c->sy, mxs); break;
-  case OP_HMMV:
-  case OP_HMMC: put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), c->color); break;
+  case OP_HMMV: put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), c->color); break;
   case OP_HMMM:
     put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), get(PICO9918_INST addrOf(c, c->asx, (uint32_t)c->sy, mxs)));
     break;
   case OP_YMMM:
     put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, mxd), get(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->sy, mxd)));
     break;
-  default: return false;
+
+  /* TRAP: the host bus IRQ can STOP or replace the command mid-step, and a transfer is the IRQ's to run */
+  default: return IS_TRANSFER(c->op);
+  }
+  return nextUnit(c);
+}
+
+static bool __time_critical_func(transferUnit)(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
+{
+  switch (c->op)
+  {
+  case OP_LMCM: c->color = point(PICO9918_INST c, c->asx, (uint32_t)c->sy, c->arg & ARG_MXS); break;
+  case OP_LMMC: pset(PICO9918_INST c, c->adx, (uint32_t)c->dy, c->arg & ARG_MXD, c->color & c->cmask); break;
+  default: put(PICO9918_INST addrOf(c, c->adx, (uint32_t)c->dy, c->arg & ARG_MXD), c->color); break;
   }
   return nextUnit(c);
 }
@@ -233,13 +243,13 @@ static inline uint16_t clipY(const pico9918_v9938_cmd_t* c, int32_t a, int32_t b
   return n < lim ? n : lim;
 }
 
-static void __time_critical_func(transferEvent)(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
+static PICO9918_NOINLINE void __time_critical_func(transferEvent)(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
 {
   c->pending = 1;
   if (!IS_TRANSFER(c->op)) return;
 
   c->pending = 0;
-  if (!bitmapMode(PICO9918_INST_ONLY) || !unit(PICO9918_INST c)) finish(PICO9918_INST c);
+  if (!bitmapMode(PICO9918_INST_ONLY) || !transferUnit(PICO9918_INST c)) finish(PICO9918_INST c);
 }
 
 static void __time_critical_func(start)(PICO9918_INST_ARG pico9918_v9938_cmd_t* c, uint8_t value)
@@ -362,8 +372,7 @@ bool PICO9918_IN_FLASH_FUNC(pico9918_cmd_step)(PICO9918_INST_ARG uint32_t budget
     finish(PICO9918_INST c);
     return false;
   }
-  /* TRAP: c->op is re-read every unit - the host bus IRQ preempts this and can STOP or replace the command */
-  while (budget-- && c->op)
+  while (budget--)
   {
     if (!unit(PICO9918_INST c))
     {
