@@ -62,8 +62,16 @@ static inline void cachePixelPair(PICO9918_PALETTE_LUT_T* dest, const uint16_t* 
 
 PICO9918_NOINLINE void pico9918_palette_regenerate(PICO9918_INST_ONLY_ARG)
 {
+#if PICO9918_V9938_BASE
+  const pico9918_mode_t mode = pico9918_display_mode(PICO9918_INST_ONLY);
+  const bool pixelsDoubled   = mode != TMS_MODE_V9938_G5 && mode != TMS_MODE_V9938_G6 &&
+                             (mode != TMS_MODE_TEXT80 || pico9918_line_bytes(PICO9918_INST_ONLY) != TMS9918_PIXELS_X);
+  const uint8_t layout = (mode == TMS_MODE_V9938_G7) ? 3 : (uint8_t)(pixelsDoubled + 1);
+#else
   const bool pixelsDoubled = pico9918_display_mode(PICO9918_INST_ONLY) != TMS_MODE_TEXT80 ||
                              pico9918_line_bytes(PICO9918_INST_ONLY) != TMS9918_PIXELS_X;
+#define layout ((uint8_t)(pixelsDoubled + 1))
+#endif
   const uint16_t* source   = PICO9918_PRAM(tms9918);
   const pico9918_aliasing_u32_t* words =
     (const pico9918_aliasing_u32_t*)PICO9918_ASSUME_ALIGNED(source, 4);
@@ -72,7 +80,7 @@ PICO9918_NOINLINE void pico9918_palette_regenerate(PICO9918_INST_ONLY_ARG)
    * setter still forces the rebuild, so a caller that dirties the LUT for a reason the
    * source words cannot show - a conversion policy change, a reset to the same colours -
    * keeps the behaviour it had. */
-  if (!tms9918->palDirty && paletteShadowLayout == (uint8_t)(pixelsDoubled + 1)
+  if (!tms9918->palDirty && paletteShadowLayout == layout
 #if !PICO9918_SINGLE_INSTANCE
       && pico9918_palette_owner == tms9918
 #endif
@@ -92,8 +100,15 @@ PICO9918_NOINLINE void pico9918_palette_regenerate(PICO9918_INST_ONLY_ARG)
 #endif
 
   for (int i = 0; i < 32; ++i) paletteShadow[i] = words[i];
-  paletteShadowLayout = (uint8_t)(pixelsDoubled + 1);
+  paletteShadowLayout = layout;
 
+#if PICO9918_V9938_BASE
+  if (layout == 3)
+  {
+    pico9918_v9938_direct_lut();
+    return;
+  }
+#endif
   if (pixelsDoubled)
   {
     for (int i = 0; i < 64; i += 8)
@@ -130,3 +145,4 @@ PICO9918_NOINLINE void pico9918_palette_regenerate(PICO9918_INST_ONLY_ARG)
     }
   }
 }
+#undef layout

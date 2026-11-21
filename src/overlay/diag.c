@@ -254,7 +254,11 @@ void pico9918_diag_set_output_name(const char* name, const char* units)
 
 const char* modeNames[] = {
   "GFX I", "GFX II", "TEXT", "MULTI", "80 COL",
+#ifdef PICO9918_V9938_BASE
+  "GFX 4", "GFX 5", "GFX 6", "GFX 7",
+#endif
 };
+_Static_assert(sizeof(modeNames) / sizeof(modeNames[0]) == TMS_MODE_COUNT, "a name per mode");
 
 /* set the temperature value to display */
 void pico9918_diag_set_temperature(float tempC)

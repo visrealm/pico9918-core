@@ -571,6 +571,17 @@ void pico9918_v9938_status_read(PICO9918_INST_ARG uint8_t reg);
 void pico9918_v9938_reset(PICO9918_INST_ONLY_ARG);
 uint32_t pico9918_v9938_cpu_addr(PICO9918_INST_ONLY_ARG);
 
+/* M5 M4 M3 M2 M1, the V9938's mode number: G4 0x0C, G5 0x10, G6 0x14, G7 0x1C */
+#define PICO9918_V9938_MODE_BITS(T)                                                                \
+  ((uint8_t)(((TMS_REGISTER(T, TMS_REG_0) & 0x0E) << 1) | ((TMS_REGISTER(T, TMS_REG_1) & 0x08) >> 2) | \
+             ((TMS_REGISTER(T, TMS_REG_1) & 0x10) >> 4)))
+
+pico9918_mode_t pico9918_v9938_mode(PICO9918_INST_ONLY_ARG);
+int pico9918_v9938_lines(PICO9918_INST_ONLY_ARG);
+void pico9918_v9938_bitmap_line(PICO9918_INST_ARG uint32_t y, uint8_t* pixels);
+void pico9918_v9938_direct_lut(void);
+uint32_t pico9918_v9938_border(PICO9918_INST_ONLY_ARG);
+
 /* the command engine: a register write, a status read with a side effect, and a slice of work */
 void pico9918_v9938_cmd_write(PICO9918_INST_ARG uint8_t reg, uint8_t value);
 void pico9918_v9938_cmd_status_read(PICO9918_INST_ARG uint8_t reg);
@@ -1091,7 +1102,11 @@ PICO9918_INLINE uint16_t pico9918_frame_map_line_impl(PICO9918_INST_ARG uint16_t
                                                       bool interlaced, uint8_t fieldOrder)
 {
   uint16_t tmsY = y;
+#if PICO9918_V9938_BASE
+  if (interlaced && (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) && !PICO9918_V9938_ACTIVE(tms9918))
+#else
   if (interlaced && (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS))
+#endif
     tmsY = y * 2 + (field ^ fieldOrder);
   return tmsY;
 }

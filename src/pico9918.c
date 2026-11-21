@@ -170,6 +170,9 @@ static const pico9918_mode_t r1Modes[] = {TMS_MODE_GRAPHICS_I, TMS_MODE_MULTICOL
 
 static inline pico9918_mode_t tmsMode(pico9918_t* tms9918)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918)) return pico9918_v9938_mode(PICO9918_INST_ONLY);
+#endif
   /* The pre-A part leaves M3 undecoded, so the bit selects nothing and M1/M2 still do. */
   if ((TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_MODE_GRAPHICS_II) && PICO9918_GM2(tms9918))
   {
@@ -3432,6 +3435,15 @@ PICO9918_DLLEXPORT uint8_t __time_critical_func(pico9918_scan_line)(PICO9918_INS
       if (PICO9918_DRAWS(tms9918, PICO9918_SUPPRESS_TILE1)) text_scan_line(PICO9918_INST y, pixels);
       if (PICO9918_UNLOCKED(tms9918)) tempStatus = pico9918_output_sprites(PICO9918_INST y, pixels);
       break;
+#if PICO9918_V9938_BASE
+    case TMS_MODE_V9938_G4:
+    case TMS_MODE_V9938_G5:
+    case TMS_MODE_V9938_G6:
+    case TMS_MODE_V9938_G7:
+      PICO9918_FILL32_WAIT(PICO9918_FILL_LINE);
+      pico9918_v9938_bitmap_line(PICO9918_INST y, pixels);
+      break;
+#endif
     }
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop

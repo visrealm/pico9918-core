@@ -229,7 +229,11 @@ pico9918_frame_geometry_t pico9918_frame_geometry(PICO9918_INST_ARG pico9918_fra
 
   if (yScale > 1)
   {
+#if PICO9918_V9938_BASE
+    bool doubleRows = (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS) && !PICO9918_V9938_ACTIVE(tms9918);
+#else
     bool doubleRows         = TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS;
+#endif
     display->vPixelScale    = yScale - (bool)doubleRows;
     display->vVirtualPixels = (display->displayPixels / yScale) << (bool)doubleRows;
   }
@@ -241,6 +245,10 @@ pico9918_frame_geometry_t pico9918_frame_geometry(PICO9918_INST_ARG pico9918_fra
   int baseRows      = (TMS_REGISTER(tms9918, PICO9918_REG_ENHANCED1) & PICO9918_R49_ROW30) ? 30 : 24;
   pico9918_v_pixels = baseRows << 3;
   if (yScale > 1 && (TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_DOUBLE_ROWS)) pico9918_v_pixels <<= 1;
+#if PICO9918_V9938_BASE
+  /* TRAP: R0 bit 3 is M5 on the V9938, not the PICO9918's double rows */
+  if (PICO9918_V9938_ACTIVE(tms9918)) pico9918_v_pixels = pico9918_v9938_lines(PICO9918_INST_ONLY);
+#endif
   pico9918_v_border = (display->vVirtualPixels - pico9918_v_pixels) / 2;
 
   pico9918_frame_geometry_t g;
@@ -362,6 +370,11 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
     pico9918_display_mode_impl(PICO9918_INST_ONLY) == TMS_MODE_TEXT80 && lineBytes == TMS9918_PIXELS_X;
 
   /* LOAD-BEARING: PRAM, not the LUT, which no top border has rebuilt yet. */
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+    pico9918_border_bg = pico9918_v9938_border(PICO9918_INST_ONLY);
+  else
+#endif
   pico9918_border_bg = PICO9918_PIXEL_PAIR(PICO9918_PIXEL_FROM_RGB12(PICO9918_PRAM(tms9918)
     [(TMS_REGISTER(tms9918, TMS_REG_FG_BG_COLOR) & 0x0f) |
      (packedNibbles ? 0 : (TMS_REGISTER(tms9918, PICO9918_REG_PALETTE_SELECT) & PICO9918_R24_TILE1_PS) << 4)]));
@@ -454,6 +467,15 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   /*** F18A status register updates ***/
   TMS_STATUS(tms9918, PICO9918_SR_IDENT) &= (uint8_t)~PICO9918_SR1_BLANK;
 
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    if ((uint8_t)(TMS_REGISTER(tms9918, PICO9918_REG_HORZ_INT_LINE) -
+                  TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) == PICO9918_SCANLINE(tms9918))
+      TMS_STATUS(tms9918, PICO9918_SR_IDENT) |= PICO9918_SR1_HF;
+  }
+  else
+#endif
   if (PICO9918_SCANLINE(tms9918) &&
       (TMS_REGISTER(tms9918, PICO9918_REG_HORZ_INT_LINE) == PICO9918_SCANLINE(tms9918)))
   {
