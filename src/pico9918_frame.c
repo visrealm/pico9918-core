@@ -476,7 +476,7 @@ bool __time_critical_func(pico9918_frame_scanline)(PICO9918_INST_ARG uint16_t y,
   {
     if ((uint8_t)(TMS_REGISTER(tms9918, PICO9918_REG_HORZ_INT_LINE) -
                   TMS_REGISTER(tms9918, PICO9918_V9938_REG_VSCROLL)) ==
-        (PICO9918_SCANLINE(tms9918) >> PICO9918_V9938_IL_EO(tms9918)))
+        (PICO9918_SCANLINE(tms9918) >> (pico9918_v_pixels_impl(PICO9918_INST_ONLY) > 255)))
       TMS_STATUS(tms9918, PICO9918_SR_IDENT) |= PICO9918_SR1_HF;
     else if (!(TMS_REGISTER(tms9918, TMS_REG_0) & TMS_R0_INT_SCANLINE))
       TMS_STATUS(tms9918, PICO9918_SR_IDENT) &= (uint8_t)~PICO9918_SR1_HF;
