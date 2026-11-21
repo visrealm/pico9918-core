@@ -173,7 +173,7 @@ uint8_t __time_critical_func(pico9918_v9938_status_peek)(PICO9918_INST_ARG uint8
   case 1: return TMS_STATUS(tms9918, PICO9918_SR_IDENT) & PICO9918_SR1_HF;
   case 2:
   {
-    uint8_t s = (uint8_t)(0x0C | v->cmd.status);
+    uint8_t s = (uint8_t)(0x0C | v->cmd.status | v->cmd.ce);
     if (PICO9918_SCANLINE(tms9918) >= pico9918_v_pixels_impl(PICO9918_INST_ONLY)) s |= PICO9918_V9938_S2_VR;
     if (v->hrToggle) s |= PICO9918_V9938_S2_HR;
     if (v->field) s |= PICO9918_V9938_S2_EO;

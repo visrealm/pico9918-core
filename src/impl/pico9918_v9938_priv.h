@@ -41,7 +41,8 @@
 /* the command engine's own state, owned by pico9918_v9938_cmd.c */
 typedef struct
 {
-  uint8_t status;   /* S#2's TR, BD and CE bits */
+  uint8_t status;   /* S#2's TR and BD bits */
+  uint8_t ce;       /* TRAP: S#2's CE, its own byte so a read-modify-write of status on the other core cannot undo it */
   uint8_t color;    /* S#7, and the CLR every command uses */
   uint16_t borderX; /* S#8, S#9 */
   uint8_t op;       /* the command running, CMD's high nibble, 0 when idle */

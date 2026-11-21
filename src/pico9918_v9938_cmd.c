@@ -124,7 +124,8 @@ static inline void finish(PICO9918_INST_ARG pico9918_v9938_cmd_t* c)
   }
   TMS_REGISTER(tms9918, PICO9918_V9938_REG_CMD) &= 0x0F;
   c->op = 0;
-  c->status &= (uint8_t)~PICO9918_V9938_S2_CE;
+  PICO9918_CROSS_CORE_FENCE();
+  c->ce = 0;
 }
 
 static inline bool nextUnit(pico9918_v9938_cmd_t* c)
@@ -281,8 +282,6 @@ static void __time_critical_func(start)(PICO9918_INST_ARG pico9918_v9938_cmd_t* 
   c->ny    = (uint16_t)(r[10] | ((r[11] & 3) << 8));
   c->arg   = r[13];
   c->logop = value & 0x0F;
-  c->op    = op;
-  c->status |= PICO9918_V9938_S2_CE;
 
   const int8_t ystep = (c->arg & ARG_DIY) ? -1 : 1;
   c->xstep  = (c->arg & ARG_DIX) ? -1 : 1;
@@ -301,33 +300,36 @@ static void __time_critical_func(start)(PICO9918_INST_ARG pico9918_v9938_cmd_t* 
     pset(PICO9918_INST c, c->dx, (uint32_t)c->dy, c->arg & ARG_MXD, c->color & c->cmask);
     finish(PICO9918_INST c);
     return;
-  case OP_SRCH: c->borderX = c->sx; return;
+  case OP_SRCH: c->borderX = c->sx; break;
   case OP_LINE:
     c->asx    = (uint16_t)((((uint32_t)c->nx - 1) >> 1) & 1023);
     c->anx    = 0;
     c->dystep = ystep;
-    return;
-  default: break;
-  }
-
-  const bool src = op == OP_LMMM || op == OP_LMCM || op == OP_HMMM || op == OP_YMMM;
-  const bool two = op == OP_LMMM || op == OP_HMMM;
-  const uint8_t s = (op >= OP_HMMV) ? c->pshift : 0;
-  const uint16_t xa = (op == OP_LMCM) ? c->sx : c->dx;
-  const int32_t ya  = (op == OP_LMCM) ? c->sy : c->dy;
-
-  c->xstep  = (int8_t)(c->xstep * (1 << s));
-  c->nx     = clipX(c, xa, two ? c->sx : xa, (op == OP_YMMM) ? 512 : c->nx, s);
-  c->lines  = clipY(c, ya, src ? c->sy : ya, c->ny);
-  c->anx    = c->nx;
-  c->systep = src ? ystep : 0;
-  c->dystep = (op != OP_LMCM) ? ystep : 0;
-
-  if (IS_TRANSFER(op))
+    break;
+  default:
   {
-    c->status |= PICO9918_V9938_S2_TR;
-    if (op == OP_LMCM || c->pending) transferEvent(PICO9918_INST c);
+    const bool src    = op == OP_LMMM || op == OP_LMCM || op == OP_HMMM || op == OP_YMMM;
+    const bool two    = op == OP_LMMM || op == OP_HMMM;
+    const uint8_t s   = (op >= OP_HMMV) ? c->pshift : 0;
+    const uint16_t xa = (op == OP_LMCM) ? c->sx : c->dx;
+    const int32_t ya  = (op == OP_LMCM) ? c->sy : c->dy;
+
+    c->xstep  = (int8_t)(c->xstep * (1 << s));
+    c->nx     = clipX(c, xa, two ? c->sx : xa, (op == OP_YMMM) ? 512 : c->nx, s);
+    c->lines  = clipY(c, ya, src ? c->sy : ya, c->ny);
+    c->anx    = c->nx;
+    c->systep = src ? ystep : 0;
+    c->dystep = (op != OP_LMCM) ? ystep : 0;
+    if (IS_TRANSFER(op)) c->status |= PICO9918_V9938_S2_TR;
   }
+  }
+
+  /* TRAP: core 0 steps the command as soon as it sees op, so op is stored after everything it reads */
+  c->ce = 1;
+  PICO9918_CROSS_CORE_FENCE();
+  c->op = op;
+
+  if (op == OP_LMCM || (IS_TRANSFER(op) && c->pending)) transferEvent(PICO9918_INST c);
 }
 
 void __time_critical_func(pico9918_v9938_cmd_write)(PICO9918_INST_ARG uint8_t reg, uint8_t value)
