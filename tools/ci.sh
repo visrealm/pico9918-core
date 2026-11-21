@@ -16,7 +16,7 @@
 # it behaves the same whether the library is the repository root or a directory
 # inside one.
 #
-# Usage: tools/ci.sh <goldens|suite|pixels|gpu|gpucore|debug|warnings|comments|doxygen|package|multi|tms9918|chip|python>
+# Usage: tools/ci.sh <goldens|suite|pixels|gpu|gpucore|v9938|debug|warnings|comments|doxygen|package|multi|tms9918|chip|python>
 #
 #   goldens   the 18 committed frames, byte-exact
 #   suite     111 scenes, seven properties and two GPU programs, both line widths
@@ -164,6 +164,14 @@ gpucore() {
   configure "$OUT-gpucore" "$LIBROOT" -DPICO9918_TMS9900_TEST=ON -DCMAKE_C_FLAGS=-O2
   build "$OUT-gpucore"
   "$(findExe "$OUT-gpucore" tms9900_test)"
+}
+
+v9938() {
+  configure "$OUT-v9938" "$LIBROOT" -DPICO9918_V9938_BASE=ON -DPICO9918_V9938CMD_TEST=ON \
+    -DPICO9918_V9938SPR_TEST=ON -DCMAKE_C_FLAGS=-O2
+  build "$OUT-v9938"
+  "$(findExe "$OUT-v9938" v9938cmd_test)"
+  "$(findExe "$OUT-v9938" v9938spr_test)"
 }
 
 # Keep the debug API explicit here even though it is now the host default: this job owns
@@ -383,6 +391,7 @@ pixels) pixels ;;
 config) config ;;
 gpu) gpu ;;
 gpucore) gpucore ;;
+v9938) v9938 ;;
 debug) debug ;;
 warnings) warnings ;;
 comments) comments ;;
@@ -393,7 +402,7 @@ tms9918) tms9918 ;;
 chip) chip ;;
 python) pythonModule ;;
 *)
-  echo "usage: tools/ci.sh <goldens|suite|pixels|config|gpu|gpucore|debug|warnings|comments|doxygen|package|multi|tms9918|chip|python>" >&2
+  echo "usage: tools/ci.sh <goldens|suite|pixels|config|gpu|gpucore|v9938|debug|warnings|comments|doxygen|package|multi|tms9918|chip|python>" >&2
   exit 2
   ;;
 esac
