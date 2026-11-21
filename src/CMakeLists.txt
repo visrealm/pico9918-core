@@ -272,6 +272,8 @@ endif()
 
 if(PICO9918_GPU_C_CORE)
   target_compile_definitions(${LIBRARY} PRIVATE PICO9918_GPU_C_CORE)
+elseif(PICO9918_PICO_BUILD AND PICO9918_V9938_BASE)
+  target_compile_definitions(${LIBRARY} PRIVATE PICO9918_GPU_PAGED=1)
 endif()
 
 # Only link Pico-specific libraries when building for a Pico target

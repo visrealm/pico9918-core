@@ -40,6 +40,8 @@ option(PICO9918_RUNTIME_CHIP "Select the chip personality at runtime" ON)
 # row and the setter that feeds it appear together or not at all.
 option(PICO9918_DIAG_GPU_FRAME_COUNTER "Include the diag GPU-frames row" OFF)
 
+option(PICO9918_V9938_BASE "V9938 base: 128KB VRAM, the F18A state outside it, the GPU paged" OFF)
+
 # Span and map access for a debugger's memory pane. It is part of the normal host
 # surface; the firmware turns it off because a board has no one to show it to.
 option(PICO9918_DEBUG_API "Debugger memory, register and GPU access" ON)

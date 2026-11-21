@@ -43,6 +43,43 @@
 99:     B    \idle
 .endm
 
+// GPU address in \r to host pointer, in place. \t and \u are scratch, and \t must be below \u.
+.macro  FLATPTR r, t, u
+        ADD  \r,R8
+.endm
+
+#if PICO9918_GPU_PAGED
+// R10 is the page table: per 4KB page, a host base and a mask
+.macro  MEMPTR r, t, u
+        LSRS \t,\r,#12
+        LSLS \t,#3
+        ADD  \t,R10
+        LDM  \t,{\t,\u}
+        ANDS \u,\r
+        ADDS \r,\t,\u
+.endm
+
+.macro  SAVEPC
+        PUSH {R3}
+.endm
+
+.macro  RESTPC
+        POP  {R3}
+.endm
+#else
+.macro  SAVEPC
+        MOV  R10,R3
+.endm
+
+.macro  RESTPC
+        MOV  R3,R10
+.endm
+
+.macro  MEMPTR r, t, u
+        FLATPTR \r,\t,\u
+.endm
+#endif
+
 //.extern F18A_PIX
 
 // *********************************************************************************************
@@ -1003,44 +1040,45 @@ I_TB:  // TB  - Not Implemented
 //0123456789ABCDEF
 //000000ooooTsSSSS
 // *********************************************************************************************
+.macro  SDECODE2A n, p, ptr
 .align 4
-sdecode2a: // calculate S & SRCE
+\n: // calculate S & SRCE
         LSLS R5,R6,#28
         LSRS R5,#27 // Got S << 1
         LSRS R2,R0,#12
         LSLS R2,#2 // Got TS * 4, but with 2 extra random hi bits
-        ADR  R4,COM_S2a
+        ADR  R4,\p
         LDR  R4,[R4,R2]
         MOV  PC,R4
 .align 4
-COM_S2a: .WORD COM_S2a_R, COM_S2a_I, COM_S2a_L, COM_S2a_II // random bits 00
-         .WORD COM_S2a_R, COM_S2a_I, COM_S2a_L, COM_S2a_II // random bits 01
-         .WORD COM_S2a_R, COM_S2a_I, COM_S2a_L, COM_S2a_II // random bits 10
-         .WORD COM_S2a_R, COM_S2a_I, COM_S2a_L, COM_S2a_II // random bits 11
+\p: .WORD \p\()_R, \p\()_I, \p\()_L, \p\()_II // random bits 00
+         .WORD \p\()_R, \p\()_I, \p\()_L, \p\()_II // random bits 01
+         .WORD \p\()_R, \p\()_I, \p\()_L, \p\()_II // random bits 10
+         .WORD \p\()_R, \p\()_I, \p\()_L, \p\()_II // random bits 11
 .align 4
-COM_S2a_R:
+\p\()_R:
         ADD  R5,R11 // SRCE = WP + S;
         MOV  PC,R7
 .align 4
-COM_S2a_L:
+\p\()_L:
         MOV  R2,R8
         LDRH R2,[R2,R3] // SRCE = (memory [PC + 0] << 8) | memory [PC + 1];
         ADDS R3,#2
         REV16 R2,R2
         CMP  R5,#0  // if (S) // Not R0?
-        BEQ  COM_S2a_F
+        BEQ  \p\()_F
         ADD  R5,R11
         LDRH R4,[R5,#0] // SRCE += (memory [WP + 0 + S] << 8) | memory [WP + 1 + S];
         REV16 R4,R4
         ADD  R2,R4
         UXTH R2,R2
-COM_S2a_F:
+\p\()_F:
         LSRS R5,R2,#1
         LSLS R5,#1 // SRCE &= 0xFFFE
-        ADD  R5,R8
+        \ptr R5,R2,R4
         MOV  PC,R7
 .align 4
-COM_S2a_II:
+\p\()_II:
         ADD  R5,R11
         LDRH R2,[R5,#0] // SRCE = (memory [WP + 0 + S] << 8) | memory [WP + 1 + S];
         REV16 R2,R2
@@ -1049,17 +1087,23 @@ COM_S2a_II:
         STRH R4,[R5,#0]
         LSRS R5,R2,#1
         LSLS R5,#1 // SRCE &= 0xFFFE
-        ADD  R5,R8
+        \ptr R5,R2,R4
         MOV  PC,R7
 .align 4
-COM_S2a_I:
+\p\()_I:
         ADD  R5,R11
         LDRH R5,[R5,#0] // SRCE = (memory [WP + 0 + S] << 8) | memory [WP + 1 + S];
         REV16 R5,R5
         LSRS R5,#1
         LSLS R5,#1 // SRCE &= 0xFFFE
-        ADD  R5,R8
+        \ptr R5,R2,R4
         MOV  PC,R7
+.endm
+
+        SDECODE2A sdecode2a, COM_S2a, MEMPTR
+#if !PICO9918_GPU_PAGED
+#define sdecode2f sdecode2a
+#endif
 // *********************************************************************************************
 //R0 (LE)
 //89ABCDEF01234567 (Format 3)
@@ -1117,7 +1161,7 @@ COM_S2b_I:
 COM_S2b_F:
         LSRS R5,R2,#1
         LSLS R5,#1 // SRCE &= 0xFFFE
-        ADD  R5,R8
+        MEMPTR R5,R2,R4
 COM_S2b_F2:
 // *********************************************************************************************
         LSLS R6,#22
@@ -1230,6 +1274,10 @@ run9900:
         MOVS R1,#0  // ST=0
         LDR  R2,=JMPTBL
         MOV  R12,R2 // Table base, so a copy of the dispatch tail can reach it from anywhere
+#if PICO9918_GPU_PAGED
+        LDR  R2,=pico9918_gpu_pages
+        MOV  R10,R2
+#endif
         B    start
 .align 4
 .ltorg
@@ -1345,7 +1393,7 @@ COM_S2d_I:
 COM_S2d_F:
         LSRS R5,R2,#1
         LSLS R5,#1 // SRCE &= 0xFFFE
-        ADD  R5,R8
+        MEMPTR R5,R2,R4
 COM_S2d_F2:
 // *********************************************************************************************
         LDRH R5,[R5,#0] // R5=SRCE - but note this is reversed byte order - instructions to fix.
@@ -1378,7 +1426,7 @@ COM_D2_L:
 COM_D2_F:
         LSRS R6,R2,#1
         LSLS R6,#1 // DEST &= 0xFFFE
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 .align 4
 COM_D2_II:
@@ -1390,7 +1438,7 @@ COM_D2_II:
         STRH R4,[R6,#0]
         LSRS R6,R2,#1
         LSLS R6,#1 // DEST &= 0xFFFE
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 .align 4
 COM_D2_I:
@@ -1399,7 +1447,7 @@ COM_D2_I:
         REV16 R6,R6
         LSRS R6,#1
         LSLS R6,#1 // DEST &= 0xFFFE
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 
 // *********************************************************************************************
@@ -1457,7 +1505,7 @@ COM_S1_I:
         LDRH R2,[R5,#0] // SRCE = (memory [WP + 0 + S] << 8) | memory [WP + 1 + S];
         REV16 R2,R2
 COM_S1_F:
-        ADD  R2,R8
+        MEMPTR R2,R4,R5
 // *********************************************************************************************
         LDRB R5,[R2,#0] // R5=SRCE
 // *********************************************************************************************
@@ -1488,12 +1536,12 @@ COM_D1_L:
         REV16 R4,R4
         ADD  R2,R4
         UXTH R6,R2
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 .align 4
 COM_D1_F:
         MOVS R6,R2
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 .align 4
 COM_D1_II:
@@ -1504,14 +1552,14 @@ COM_D1_II:
         REV16 R4,R4
         STRH R4,[R6,#0]
         MOVS R6,R2
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 .align 4
 COM_D1_I:
         ADD  R6,R11
         LDRH R6,[R6,#0] // DEST = (memory [WP + 0 + D] << 8) | memory [WP + 1 + D];
         REV16 R6,R6
-        ADD  R6,R8
+        MEMPTR R6,R2,R4
         MOV  PC,R7
 
 // *********************************************************************************************
@@ -1562,7 +1610,7 @@ I_XOP_BL: // Return to C code function: F18A_PIX for BL mode
 */
 .align 4
 I_XOP_BL:
-        MOV  R10,R3      // Save current PC
+        SAVEPC
         ADR  R3,VREGSH
         LDR  R3,[R3,#0]  // Get offset
         ADD  R3,R8       // Within the 64KB memory area
@@ -1591,7 +1639,7 @@ I_XOP_BL:
 
         REV16 R2,R2
         STRH R2,[R6,#0]
-        MOV  R3,R10      // Restore current PC
+        RESTPC
         B    start
 
 .align 4
@@ -1654,7 +1702,7 @@ I_XOP_BL_NW:
         REV16 R4,R4
         STRH R4,[R6,#0]
 I_XOP_BL_F:
-        MOV  R3,R10      // Restore current PC
+        RESTPC
         B    start
 
 .align 4
@@ -1746,20 +1794,25 @@ I_POP:  MOV  R0,R11 // WP
         STRH R0,[R5,#0] // R5=DEST
         B    start
 // *********************************************************************************************
+#if PICO9918_GPU_PAGED
+.align 4
+.global pico9918_gpu_pages
+pico9918_gpu_pages: .space 128
+#endif
 .align 4
 JMPTBL: .WORD start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0        // >0000
         .WORD start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0     , start    , 0        // >0100
         .WORD I_LI     , 0     , I_AI     , 0     , I_ANDI   , 0     , I_ORI    , 0     , I_CI     , 0     , I_STWP   , 0     , I_STST   , 0     , I_LWPI   , 0        // >0200
         .WORD I_LIMI   , 0     , start    , 0     , I_IDLE   , 0     , start    , 0     , I_RTWP   , 0     , start    , 0     , start    , 0     , start    , 0        // >0300
-        .WORD sdecode2a, I_BLWP, sdecode2a, I_BLWP, sdecode2a, I_B   , sdecode2a, I_B   , sdecode2a, I_X   , sdecode2a, I_X   , sdecode2a, I_CLR , sdecode2a, I_CLR    // >0400
+        .WORD sdecode2a, I_BLWP, sdecode2a, I_BLWP, sdecode2f, I_B, sdecode2f, I_B, sdecode2a, I_X   , sdecode2a, I_X   , sdecode2a, I_CLR , sdecode2a, I_CLR    // >0400
         .WORD sdecode2a, I_NEG , sdecode2a, I_NEG , sdecode2a, I_INV , sdecode2a, I_INV , sdecode2a, I_INC , sdecode2a, I_INC , sdecode2a, I_INCT, sdecode2a, I_INCT   // >0500
-        .WORD sdecode2a, I_DEC , sdecode2a, I_DEC , sdecode2a, I_DECT, sdecode2a, I_DECT, sdecode2a, I_BL  , sdecode2a, I_BL  , sdecode2a, I_SWPB, sdecode2a, I_SWPB   // >0600
+        .WORD sdecode2a, I_DEC , sdecode2a, I_DEC , sdecode2a, I_DECT, sdecode2a, I_DECT, sdecode2f, I_BL, sdecode2f, I_BL, sdecode2a, I_SWPB, sdecode2a, I_SWPB   // >0600
         .WORD sdecode2a, I_SETO, sdecode2a, I_SETO, sdecode2a, I_ABS , sdecode2a, I_ABS , start    , 0     , start    , 0     , start    , 0     , start    , 0        // >0700
         .WORD I_SRA    , 0     , I_SRA    , 0     , I_SRA    , 0     , I_SRA    , 0     , I_SRA    , 0     , I_SRA    , 0     , I_SRA    , 0     , I_SRA    , 0        // >0800
         .WORD I_SRL    , 0     , I_SRL    , 0     , I_SRL    , 0     , I_SRL    , 0     , I_SRL    , 0     , I_SRL    , 0     , I_SRL    , 0     , I_SRL    , 0        // >0900
         .WORD I_SLA    , 0     , I_SLA    , 0     , I_SLA    , 0     , I_SLA    , 0     , I_SLA    , 0     , I_SLA    , 0     , I_SLA    , 0     , I_SLA    , 0        // >0A00
         .WORD I_SRC    , 0     , I_SRC    , 0     , I_SRC    , 0     , I_SRC    , 0     , I_SRC    , 0     , I_SRC    , 0     , I_SRC    , 0     , I_SRC    , 0        // >0B00
-        .WORD I_RET    , 0     , I_RET    , 0     , I_RET    , 0     , I_RET    , 0     , sdecode2a, I_CALL, sdecode2a, I_CALL, sdecode2a, I_CALL, sdecode2a, I_CALL   // >0C00
+        .WORD I_RET    , 0     , I_RET    , 0     , I_RET    , 0     , I_RET    , 0     , sdecode2f, I_CALL, sdecode2f, I_CALL, sdecode2f, I_CALL, sdecode2f, I_CALL   // >0C00
         .WORD sdecode2a, I_PUSH, sdecode2a, I_PUSH, sdecode2a, I_PUSH, sdecode2a, I_PUSH, sdecode2a, I_PUSH, sdecode2a, I_PUSH, sdecode2a, I_PUSH, sdecode2a, I_PUSH   // >0D00
         .WORD I_SLC    , 0     , I_SLC    , 0     , I_SLC    , 0     , I_SLC    , 0     , I_SLC    , 0     , I_SLC    , 0     , I_SLC    , 0     , I_SLC    , 0        // >0E00
         .WORD sdecode2a, I_POP , sdecode2a, I_POP , sdecode2a, I_POP , sdecode2a, I_POP , sdecode2a, I_POP , sdecode2a, I_POP , sdecode2a, I_POP , sdecode2a, I_POP    // >0F00
@@ -2003,3 +2056,6 @@ JMPTBL: .WORD start    , 0     , start    , 0     , start    , 0     , start    
         .WORD sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB   // >FD00
         .WORD sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB   // >FE00
         .WORD sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB, sdecode1d, I_SOCB   // >FF00
+#if PICO9918_GPU_PAGED
+        SDECODE2A sdecode2f, COM_S2f, FLATPTR
+#endif

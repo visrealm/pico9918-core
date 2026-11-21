@@ -47,6 +47,9 @@
 #if !PICO9918_GPU_BUDGETED
 /* run9900() implemented in platform/thumb9900_{m0,m33}.S */
 extern uint16_t run9900(uint8_t* memory, uint16_t pc, uint16_t wp, uint8_t* regx38);
+#if PICO9918_GPU_PAGED
+extern uint32_t pico9918_gpu_pages[16][2];
+#endif
 #else
 #if defined(TMS9900_WATCH_WRITES)
 static void gpuDmaWatch(uint8_t* vram, uint32_t addr);
@@ -473,6 +476,13 @@ void pico9918_gpu_init(PICO9918_INST_ONLY_ARG)
 #endif
   guard(0, &(tms9918->vram.bytes[0x8000]), 32);
   guard(1, tms9918->vram.map.pram, 64 * sizeof(*tms9918->vram.map.pram));
+#endif
+#if PICO9918_GPU_PAGED
+  for (uint32_t i = 0; i < 16; ++i)
+  {
+    pico9918_gpu_pages[i][0] = (uint32_t)(uintptr_t)tms9918->vram.bytes;
+    pico9918_gpu_pages[i][1] = 0xFFFF;
+  }
 #endif
 #if PICO9918_GPU_BUDGETED
   tms9918->gpuWp = PICO9918_GPU_WORKSPACE;
