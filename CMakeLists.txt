@@ -28,7 +28,7 @@ option(PICO9918_TEXT80_8BPP "80-column text at 8bpp: ECM, palette select and bit
 # both the asset and its render path, so the image costs nothing in flash.
 option(PICO9918_NO_SPLASH "Omit the splash overlay and its image asset" OFF)
 
-set(PICO9918_PRERELEASE "" CACHE STRING "Pre-release stage and number: alphaN, betaN or rcN, N 1-31. Empty for a final release")
+set(PICO9918_PRERELEASE "alpha1" CACHE STRING "Pre-release stage and number: alphaN, betaN or rcN, N 1-31. Empty for a final release")
 
 # Which chip an instance answers as, chosen per instance at runtime rather than by
 # the library build: a TMS9918, TMS9918A, F18A, PICO9918 or PICO9918 PRO. This is
@@ -82,7 +82,7 @@ endif()
 # The library's version, and what `find_package(pico9918_core 1.3)` matches. Kept
 # in step with the firmware release it is generated from - the firmware's root
 # CMakeLists checks the two agree.
-project(pico9918_core VERSION 1.3.0 LANGUAGES C)
+project(pico9918_core VERSION 2.0.0 LANGUAGES C)
 
 # Set by a parent generating this library from the same release. Checked here because
 # project() sets pico9918_core_VERSION in this scope only: a parent reads an empty
