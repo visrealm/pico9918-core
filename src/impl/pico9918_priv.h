@@ -72,6 +72,7 @@
 
 #include "../pico9918.h"
 #include "../pico9918_config.h"
+#include "pico9918_v9938_priv.h"
 
 
 #define GRAPHICS_NUM_COLS   32
@@ -360,6 +361,10 @@ struct pico9918_s
   /* runtime base VDP selection (independent of F18A unlock) */
   uint8_t vdpBase; /* PICO9918_BASE_TMS9918 or PICO9918_BASE_V9938 */
 
+#if PICO9918_V9938_BASE
+  pico9918_v9938_t v9938;
+#endif
+
 #if PICO9918_BUILD_RUNTIME_CHIP
   /* which chip this instance answers as, and the same thing as the bit per feature the
      gates read. Both survive a reset - see pico9918_set_chip. Absent from a board's
@@ -551,6 +556,26 @@ PICO9918_INLINE_HOT uint32_t pico9918_cpu_vram_addr_impl(PICO9918_INST_ARG uint3
 PICO9918_INTERNAL
 void pico9918_write_reg_value_impl(PICO9918_INST_ARG uint8_t regSelect, uint8_t value);
 
+#if PICO9918_V9938_BASE
+/* the V9938 answers the ports while it is the base and the F18A is locked */
+#define PICO9918_V9938_ACTIVE(T) ((T)->vdpBase == PICO9918_BASE_V9938 && !PICO9918_UNLOCKED(T))
+
+void pico9918_v9938_write_ctrl(PICO9918_INST_ARG uint8_t data);
+void pico9918_v9938_write_data(PICO9918_INST_ARG uint8_t data);
+uint8_t pico9918_v9938_fetch(PICO9918_INST_ONLY_ARG);
+void pico9918_v9938_write_palette(PICO9918_INST_ARG uint8_t data);
+void pico9918_v9938_write_indirect(PICO9918_INST_ARG uint8_t data);
+void pico9918_v9938_write_reg(PICO9918_INST_ARG uint8_t reg, uint8_t value);
+uint8_t pico9918_v9938_status_peek(PICO9918_INST_ARG uint8_t reg);
+void pico9918_v9938_status_read(PICO9918_INST_ARG uint8_t reg);
+void pico9918_v9938_reset(PICO9918_INST_ONLY_ARG);
+uint32_t pico9918_v9938_cpu_addr(PICO9918_INST_ONLY_ARG);
+
+/* the command engine: a register write, a status read with a side effect, and a slice of work */
+void pico9918_v9938_cmd_write(PICO9918_INST_ARG uint8_t reg, uint8_t value);
+void pico9918_v9938_cmd_status_read(PICO9918_INST_ARG uint8_t reg);
+#endif
+
 /**
  * \brief write an address (mode = 1) to the tms9918
  *
@@ -558,6 +583,13 @@ void pico9918_write_reg_value_impl(PICO9918_INST_ARG uint8_t regSelect, uint8_t 
  */
 PICO9918_INLINE_HOT void pico9918_write_addr_impl(PICO9918_INST_ARG uint8_t data)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    pico9918_v9938_write_ctrl(PICO9918_INST data);
+    return;
+  }
+#endif
   if (tms9918->regWriteStage == 0)
   {
     /* first stage byte - either an address LSB or a register value */
@@ -670,6 +702,9 @@ PICO9918_INLINE_HOT void pico9918_status_read_reconcile_impl(PICO9918_INST_ARG u
   if (!pico9918_status_select_active(PICO9918_INST_ONLY)) readReg = 0;
 
   pico9918_status_read_core(PICO9918_INST readReg, readVal);
+#if PICO9918_V9938_BASE
+  if (readReg > 1 && PICO9918_V9938_ACTIVE(tms9918)) pico9918_v9938_status_read(PICO9918_INST readReg);
+#endif
 }
 
 /**
@@ -702,6 +737,15 @@ PICO9918_INLINE uint8_t pico9918_read_status_impl(PICO9918_INST_ONLY_ARG)
   pico9918_reset_access_flags_impl(PICO9918_INST_ONLY);
 
   const uint8_t readReg = TMS_REGISTER(tms9918, PICO9918_REG_STATUS_SELECT) & PICO9918_R15_STATUS_NUM;
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    const uint8_t v9938Val = pico9918_v9938_status_peek(PICO9918_INST readReg);
+    pico9918_status_read_core(PICO9918_INST readReg, v9938Val);
+    if (readReg > 1) pico9918_v9938_status_read(PICO9918_INST readReg);
+    return v9938Val;
+  }
+#endif
   const uint8_t readVal = TMS_STATUS(tms9918, readReg);
 
   pico9918_status_read_core(PICO9918_INST readReg, readVal);
@@ -722,6 +766,13 @@ PICO9918_INLINE_HOT uint8_t pico9918_peek_status_impl(PICO9918_INST_ONLY_ARG)
  */
 PICO9918_INLINE_HOT void pico9918_write_data_impl(PICO9918_INST_ARG uint8_t data)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    pico9918_v9938_write_data(PICO9918_INST data);
+    return;
+  }
+#endif
   if (TMS_REGISTER(tms9918, PICO9918_REG_PALETTE_CONTROL) &
       PICO9918_R47_DATA_PORT) // data port is in palette mode
   {
@@ -763,6 +814,14 @@ PICO9918_INLINE_HOT void pico9918_write_data_impl(PICO9918_INST_ARG uint8_t data
 /** \brief read data (mode = 0) from the tms9918 */
 PICO9918_INLINE_HOT uint8_t pico9918_read_data_impl(PICO9918_INST_ONLY_ARG)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918))
+  {
+    const uint8_t buffered = tms9918->readAheadBuffer;
+    pico9918_v9938_fetch(PICO9918_INST_ONLY);
+    return buffered;
+  }
+#endif
   tms9918->regWriteStage   = 0;
   uint8_t currentValue     = tms9918->readAheadBuffer;
   tms9918->readAheadBuffer =
@@ -774,6 +833,9 @@ PICO9918_INLINE_HOT uint8_t pico9918_read_data_impl(PICO9918_INST_ONLY_ARG)
 /** \brief refill the read-ahead buffer from the current address and return the new value */
 PICO9918_INLINE_HOT uint8_t pico9918_read_ahead_data_impl(PICO9918_INST_ONLY_ARG)
 {
+#if PICO9918_V9938_BASE
+  if (PICO9918_V9938_ACTIVE(tms9918)) return pico9918_v9938_fetch(PICO9918_INST_ONLY);
+#endif
   tms9918->regWriteStage = 0;
   tms9918->readAheadBuffer =
     tms9918->vram.bytes[pico9918_cpu_vram_addr_impl(PICO9918_INST tms9918->currentAddress)];
@@ -786,6 +848,28 @@ PICO9918_INLINE_HOT uint8_t pico9918_read_data_no_inc_impl(PICO9918_INST_ONLY_AR
 {
   return tms9918->readAheadBuffer;
 }
+
+#if PICO9918_V9938_BASE
+/* port is (MODE1 << 1) | MODE. Ports 2 and 3 are the V9938's alone; anything else aliases them */
+PICO9918_INLINE_HOT void pico9918_write_port_impl(PICO9918_INST_ARG uint8_t port, uint8_t data)
+{
+  if ((port & 2) && PICO9918_V9938_ACTIVE(tms9918))
+  {
+    if (port & 1)
+      pico9918_v9938_write_indirect(PICO9918_INST data);
+    else
+      pico9918_v9938_write_palette(PICO9918_INST data);
+  }
+  else if (port & 1)
+  {
+    pico9918_write_addr_impl(PICO9918_INST data);
+  }
+  else
+  {
+    pico9918_write_data_impl(PICO9918_INST data);
+  }
+}
+#endif
 
 /**
  * \brief whether /INT should be asserted

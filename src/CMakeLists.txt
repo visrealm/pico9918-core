@@ -35,9 +35,7 @@ endif()
 
 # V9938 base scaffold - an additive capability. Default OFF.
 if(PICO9918_V9938_BASE)
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/gpu/v9938cmd.c)
-    list(APPEND PICO9918_SOURCES gpu/v9938cmd.c)
-  endif()
+  list(APPEND PICO9918_SOURCES pico9918_v9938.c pico9918_v9938_cmd.c)
 endif()
 
 # Adds entry points and nothing else - no instance field, no layout change, no calling

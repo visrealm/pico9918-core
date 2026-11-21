@@ -544,6 +544,32 @@ uint8_t pico9918_read_data(PICO9918_INST_ONLY_ARG);
 PICO9918_DLLEXPORT
 uint8_t pico9918_read_data_no_inc(PICO9918_INST_ONLY_ARG);
 
+#ifdef PICO9918_V9938_BASE
+/**
+ * \brief write one of the V9938's four ports
+ *
+ * \p port is (MODE1 << 1) | MODE, the host's A1 and A0. Ports 0 and 1 are the same as
+ * pico9918_write_data and pico9918_write_addr. Port 2 is the palette and port 3 the
+ * indirect register write; while the F18A is unlocked, or the base is the TMS9918A, they
+ * alias ports 0 and 1, as a part with no MODE1 pin would.
+ */
+PICO9918_DLLEXPORT
+void pico9918_write_port(PICO9918_INST_ARG uint8_t port, uint8_t data);
+
+/** \brief read one of the four ports. Ports 2 and 3 read 0xFF on the V9938 */
+PICO9918_DLLEXPORT
+uint8_t pico9918_read_port(PICO9918_INST_ARG uint8_t port);
+
+/**
+ * \brief run the V9938 command engine for at most \p budget VRAM accesses
+ *
+ * Returns true while a command is still running. A board runs it from its own loop; a
+ * desktop consumer can call it once per scanline or after every port access.
+ */
+PICO9918_DLLEXPORT
+bool pico9918_cmd_step(PICO9918_INST_ARG uint32_t budget);
+#endif
+
 
 /**
  * \brief true if the device is asserting /INT

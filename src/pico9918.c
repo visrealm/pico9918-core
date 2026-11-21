@@ -411,6 +411,9 @@ PICO9918_DLLEXPORT void __time_critical_func(pico9918_reset)(PICO9918_INST_ONLY_
   {
     PICO9918_PRAM(tms9918)[i] = __builtin_bswap16(defaultPalette[i]);
   }
+#if PICO9918_V9938_BASE
+  if (tms9918->vdpBase == PICO9918_BASE_V9938) pico9918_v9938_reset(PICO9918_INST_ONLY);
+#endif
 
   /* row-30 progressive has no border line, so nothing else invalidates the derived LUT */
   tms9918->palDirty = 1;

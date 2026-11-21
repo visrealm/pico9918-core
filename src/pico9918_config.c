@@ -250,9 +250,16 @@ void pico9918_config_apply(PICO9918_INST_ONLY_ARG)
       tms9918->palDirty = 1;
     }
 
+#if PICO9918_V9938_BASE
+    const uint8_t wasBase = tms9918->vdpBase;
+#endif
     tms9918->vdpBase = (tms9918->config[PICO9918_CONF_VDP_BASE] == PICO9918_BASE_V9938)
                          ? PICO9918_BASE_V9938
                          : PICO9918_BASE_TMS9918;
+#if PICO9918_V9938_BASE
+    if (tms9918->vdpBase == PICO9918_BASE_V9938 && wasBase != PICO9918_BASE_V9938)
+      pico9918_v9938_reset(PICO9918_INST_ONLY);
+#endif
   }
 
   /* last, so the host derives its effects from registers this call may just have seeded */
