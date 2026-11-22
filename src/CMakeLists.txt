@@ -33,10 +33,10 @@ else()
     gpu/tms9900.c)
 endif()
 
-# V9938 base scaffold - an additive capability. Default OFF.
+# The V9938 base, an additive capability. Default OFF.
 if(PICO9918_V9938_BASE)
-  list(APPEND PICO9918_SOURCES pico9918_v9938.c pico9918_v9938_cmd.c pico9918_v9938_render.c
-    pico9918_v9938_sprites.c)
+  list(APPEND PICO9918_SOURCES v9938/v9938.c v9938/v9938_cmd.c v9938/v9938_render.c
+    v9938/v9938_sprites.c)
 endif()
 
 # Adds entry points and nothing else - no instance field, no layout change, no calling
